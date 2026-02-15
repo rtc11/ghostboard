@@ -353,6 +353,10 @@ fn void Manager.show_clips(&self) {
 
         visual_idx++;
     }
+
+    // footer
+    ZString footer = string::tformat_zstr("o: inspect clip       enter: select clip       q: quit       hjkl: navigate");
+    rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 19, 0f, COLOR_TEXT);
     rl::endDrawing();
 }
 
