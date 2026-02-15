@@ -94,7 +94,7 @@ fn void setup_tray() {
     ObjcId system_sbar = objc::msg_send(objc::getClass("NSStatusBar"), SendVoid, "systemStatusBar");
     ObjcId status_item = objc::msg_send(system_sbar, StatusItemWithLength, "statusItemWithLength:", -1.0);
     ObjcId button = objc::msg_send(status_item, SendVoid, "button");
-    objc::msg_send(button, SendIdForId, "setTitle:", to_nsstr("📋"));
+    objc::msg_send(button, SendIdForId, "setTitle:", to_nsstr("✄"));
 }
 
 fn void setup_event_tap(Manager* manager) {
@@ -129,8 +129,7 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     return event;
 }
 
-// TODO: obsolete?
-fn void hide_app_completely() {
+fn void move_app_to_background() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
     objc::msg_send(shared_app, SendIdForId, "hide:", shared_app);
 }
@@ -146,7 +145,6 @@ fn Manager init(usz limit = 10) {
     Manager manager = {
         .cp = cp,
         .history_limit = limit,
-        // .font = rl::loadFont("resources/SF-Pro.ttf"),
         .font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0),
     };
     manager.update();
@@ -181,7 +179,7 @@ fn void Manager.loop(&self) {
         if (self.menu && !rl::isWindowFocused()) {
             self.menu = false;
             rl::setWindowState(WINDOW_HIDDEN);
-            hide_app_completely();
+            move_app_to_background();
         }
 
         int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
@@ -226,7 +224,7 @@ fn void Manager.menu_mode(&self) {
         } else {
             self.menu = false;
             rl::setWindowState(WINDOW_HIDDEN);
-            hide_app_completely();
+            move_app_to_background();
         }
     }
 
@@ -234,7 +232,7 @@ fn void Manager.menu_mode(&self) {
         if (self.history.len() == 0) {
             self.menu = false;
             rl::setWindowState(WINDOW_HIDDEN);
-            hide_app_completely();
+            move_app_to_background();
         }
         usz reversed_idx = self.history.len() - 1 - self.selected_idx;
         Entry? selected = self.history.get(reversed_idx);
@@ -245,7 +243,7 @@ fn void Manager.menu_mode(&self) {
         } 
         self.menu = false;
         rl::setWindowState(WINDOW_HIDDEN);
-        hide_app_completely();
+        move_app_to_background();
 
         // wait for the os to copmlete the transition
         thread::sleep(time::ms(50));
