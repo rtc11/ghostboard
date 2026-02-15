@@ -8,9 +8,6 @@ import std::os::macos::objc;
 import cg, cf, ct;
 import raylib5;
 
-// TODO: newest clip first
-// TODO: smaller clearer font
-
 alias IdFnFloat = fn ObjcId(ObjcId, ObjcSelector, float);
 alias IdFnDouble = fn ObjcId(ObjcId, ObjcSelector, double);
 alias IdFnIdId = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcId);
@@ -28,9 +25,11 @@ alias SendAction = fn bool(ObjcId, ObjcSelector, ObjcSelector, ObjcId, ObjcId);
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
-const rl::Color BG = { 20, 28, 33, 240};
-const rl::Color TEXT = {190, 210, 66, 200};
-const rl::Color BODY = { 13, 18, 20, 240};
+const rl::Color COLOR_BG = { 20, 28, 33, 240};
+const rl::Color COLOR_TEXT = {190, 210, 66, 200};
+const rl::Color COLOR_BODY = { 13, 18, 20, 240};
+
+faultdef EMPTY, REDACTED;
 
 struct Manager {
     Clipboard cp;
@@ -38,6 +37,8 @@ struct Manager {
     usz history_limit;
     int selected_idx;
     bool menu;
+    bool show_all_text;
+    rl::Vector2 scroll_pos;
     Font font;
 }
 
@@ -60,13 +61,19 @@ fn void main(String[] args)
     hide_from_dock();
     setup_tray();
     
-    rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT);
-    rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "c3lipboard");
+    rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
+    rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "GhostBoard");
 
     Manager manager = init(limit: 10);
 
     setup_event_tap(&manager);
     manager.loop();
+}
+
+fn void hide_from_dock() {
+    ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
+    objc::msg_send(shared_app, SetPolicy, "setActivationPolicy:", 1);
+    rl::setConfigFlags(ConfigFlag.WINDOW_HIDDEN | ConfigFlag.WINDOW_ALWAYS_RUN);
 }
 
 fn void setup_tray() {
@@ -108,71 +115,107 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     return event;
 }
 
-fn void Manager.print(&self) {
-    io::printfn("hello from manager");
+// TODO: obsolete?
+fn void hide_app_completely() {
+    ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
+    objc::msg_send(shared_app, SendIdForId, "hide:", shared_app);
+}
+
+fn Manager init(usz limit = 10) {
+    ObjcClass cls = objc::class_by_name("NSPasteboard")!!;
+    Clipboard cp = {
+        .instance = objc::msg_send(cls, SendVoid, "generalPasteboard"),
+        .items_sel = objc::sel_registerName("pasteboardItems"),
+        .first_obj_sel = objc::sel_registerName("firstObject"),
+        .types_sel = objc::sel_registerName("types"),
+    };
+    Manager manager = {
+        .cp = cp,
+        .history_limit = limit,
+        // .font = rl::loadFont("resources/SF-Pro.ttf"),
+        .font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0),
+    };
+    manager.update();
+    rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
+    return manager;
+}
+
+fn void Manager.center_window(&self) {
+    int monitor = rl::getCurrentMonitor();
+    rl::Vector2 size = { (float)rl::getMonitorWidth(monitor), (float)rl::getMonitorHeight(monitor) };
+    rl::Vector2 scale = rl::getWindowScaleDPI();
+    int x = (int)((size.x / scale.x - SCREEN_WIDTH) / 2f);
+    int y = (int)((size.y / scale.y - SCREEN_HEIGHT) / 2f);
+    rl::setWindowPosition(x, y);
 }
 
 fn void Manager.show_window(&self) {
-
     // app to foreground
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
     objc::msg_send(shared_app, SendBool, "activateIgnoringOtherApps:", true);
 
+    self.center_window();
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
-    rl::setWindowPosition(500, 300);
 }
 
 fn void Manager.loop(&self) {
     int last_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
 
     while (!rl::windowShouldClose()) {
-        if (self.menu && rl::isWindowFocused() == false) {
+        if (self.menu && !rl::isWindowFocused()) {
             self.menu = false;
             rl::setWindowState(WINDOW_HIDDEN);
+            hide_app_completely();
         }
 
         int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
         if (current_count != last_count) {
             last_count = current_count;
-            if(self.update()) {
-                io::printfn("[%d] history size: %d", current_count, self.history.len());
-            }
+            self.update();
         }
  
         if (self.menu) {
-            self.show_clips();
+            if (self.show_all_text) {
+                self.show_all_text_view();
+            } else {
+                self.show_clips();
+            }
             self.menu_mode();
         } else {
+            rl::pollInputEvents();
             rl::beginDrawing();
-            rl::clearBackground(BG);
+            rl::clearBackground(COLOR_BG);
             rl::endDrawing();
         }
 
-        thread::sleep(time::ms(16)); // ~60fps
+        thread::sleep(time::ms(8)); // ~120
     }
     rl::closeWindow();
 }
 
-fn void hide_from_dock() {
-    ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
-    objc::msg_send(shared_app, SetPolicy, "setActivationPolicy:", 1);
-    rl::setConfigFlags(ConfigFlag.WINDOW_HIDDEN | ConfigFlag.WINDOW_ALWAYS_RUN);
-}
-
 fn void Manager.menu_mode(&self) {
-    if (rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J)) {
-        self.selected_idx = (self.selected_idx + 1) % (int)self.history.len();
+    if (!self.show_all_text) {
+        if (rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J)) {
+            self.selected_idx = (self.selected_idx + 1) % (int)self.history.len();
+        }
+
+        if (rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K)) {
+            self.selected_idx = (self.selected_idx - 1 + (int)self.history.len()) % (int)self.history.len();
+        }
     }
-    if (rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K)) {
-        self.selected_idx = (self.selected_idx - 1 + (int)self.history.len()) % (int)self.history.len();
-    }
+
     if (rl::isKeyPressed(rl::KEY_ESCAPE) || rl::isKeyPressed(rl::KEY_Q)) {
-        self.menu = false;
-        rl::setWindowState(WINDOW_HIDDEN);
-        hide_app_completely();
+        if (self.show_all_text) {
+            self.show_all_text = false;
+        } else {
+            self.menu = false;
+            rl::setWindowState(WINDOW_HIDDEN);
+            hide_app_completely();
+        }
     }
+
     if (rl::isKeyPressed(rl::KEY_ENTER)) {
         if (self.history.len() == 0) {
             self.menu = false;
@@ -194,62 +237,26 @@ fn void Manager.menu_mode(&self) {
         thread::sleep(time::ms(50));
         self.simulate_paste();
     }
-}
 
-fn void hide_app_completely() {
-    ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
-    objc::msg_send(shared_app, SendIdForId, "hide:", shared_app);
-}
-
-faultdef EMPTY, REDACTED;
-
-fn Entry? Clipboard.current(&self) {
-
-    if (try safe = self.is_safe()) {
-        if (!safe) {
-            return {
-                .text = "***",
-                .timestamp = time::now(),
-            };
-        }
-
-        if (try clip = self.get_current_clip()) {
-            return clip;
+    if (rl::isKeyPressed(rl::KEY_O)) {
+        if (self.history.len() > 0) {
+            self.show_all_text = !self.show_all_text;
+            self.scroll_pos = {0, 0};
         }
     }
-    return EMPTY?;
-}
 
-fn bool? Clipboard.is_safe(&self) {
-    @pool() {
-        ObjcId items_array = objc::msg_send(self.instance, SendVoid, "pasteboardItems");
-        ObjcId item = objc::msg_send(items_array, SendVoid, "firstObject");
-        if (item == null) return EMPTY?;
-
-        ObjcId types_array = objc::msg_send(item, SendVoid, "types");
-
-        ObjcId concealed_key = to_nsstr("org.nspasteboard.ConcealedType");
-        bool concealed = (bool)objc::msg_send(types_array, SendIdForBool, "containsObject:", concealed_key);
-        return !concealed;
-    };
-}
-
-fn ObjcId to_nsstr(ZString str) {
-    ObjcClass str_cls = objc::getClass("NSString");
-    return objc::msg_send(str_cls, SendStringForId, "stringWithUTF8String:", str);
-}
-
-fn Entry? Clipboard.get_current_clip(&self) {
-    @pool() {
-        ObjcId type_str = to_nsstr("public.utf8-plain-text");
-        ObjcId ns_str = objc::msg_send(self.instance, SendIdForId, "stringForType:", type_str);
-        if (ns_str == null) return EMPTY?;
-        ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
-        return {
-            .text = zstr.copy(mem),
-            .timestamp = time::now(),
-        };
-    };
+    if (self.show_all_text) {
+        float scroll_speed = 20f;
+        float hjkl_speed = 15;
+        if (rl::isKeyDown(rl::KEY_LEFT)  || rl::isKeyDown(rl::KEY_H)) self.scroll_pos.x -= hjkl_speed;
+        if (rl::isKeyDown(rl::KEY_DOWN)  || rl::isKeyDown(rl::KEY_J)) self.scroll_pos.y += hjkl_speed;
+        if (rl::isKeyDown(rl::KEY_UP)    || rl::isKeyDown(rl::KEY_K)) self.scroll_pos.y -= hjkl_speed;
+        if (rl::isKeyDown(rl::KEY_RIGHT) || rl::isKeyDown(rl::KEY_L)) self.scroll_pos.x += hjkl_speed;
+        float wheel = rl::getMouseWheelMove();
+        if (wheel != 0) self.scroll_pos.y -= wheel * scroll_speed;
+        if (self.scroll_pos.y < 0) self.scroll_pos.y = 0;
+        if (self.scroll_pos.x < 0) self.scroll_pos.x = 0;
+    }
 }
 
 fn void Manager.add(&self, String text) {
@@ -283,18 +290,9 @@ fn bool Manager.update(&self) {
     return true;
 }
 
-fn void Clipboard.set(&self, String text) {
-    @pool() {
-        objc::msg_send(self.instance, SendVoid, "clearContents");
-        ObjcId ns_str = to_nsstr(text.zstr_tcopy());
-        ObjcId type_str = to_nsstr("public.utf8-plain-text");
-        objc::msg_send(self.instance, SendIdIdForBool, "setString:forType:", ns_str, type_str);
-    };
-}
-
 fn void Manager.show_clips(&self) {
     rl::beginDrawing();
-    rl::clearBackground(BG);
+    rl::clearBackground(COLOR_BG);
     rl::setTextureFilter(self.font.texture, BILINEAR);
 
     // header
@@ -302,14 +300,14 @@ fn void Manager.show_clips(&self) {
     float header_font_size = 24f;
     rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
     float header_x = (SCREEN_WIDTH - header_size.x) / 2f; 
-    rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, TEXT);
+    rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, COLOR_TEXT);
 
     int spacing = 30;
     int rec_padding = 20;
     int rec_height = 25;
     int rec_width = SCREEN_WIDTH - (rec_padding * 2);
 
-    int max_text_len = 100;
+    int max_text_len = 90;
     int font_size = 20;
     int font_padding = 25;
     float font_y_offset = (rec_height - (float)font_size) / 2f;
@@ -326,20 +324,25 @@ fn void Manager.show_clips(&self) {
         bool is_selected = visual_idx == self.selected_idx;
 
         // rectangle
-        rl::Color rec_color = is_selected ? BODY : BG;
+        rl::Color rec_color = is_selected ? COLOR_BODY : COLOR_BG;
         rl::drawRectangle(rec_padding, y_pos, rec_width, rec_height, rec_color);
 
         // text
-        // TODO: hide everything after a potential newline
-        String text = entry.text.len > max_text_len ? entry.text[..max_text_len] : entry.text;
-        rl::drawTextEx(self.font, text.zstr_tcopy(), {font_padding, y_pos + font_y_offset}, font_size, 0f, TEXT);
+        String text = entry.text;
+        if(try newline_pos = text.index_of_char('\n')) {
+            text = text[..newline_pos];
+        }
+        if (text.len > max_text_len) {
+            text = text[..max_text_len];
+        }
+        rl::drawTextEx(self.font, text.zstr_tcopy(), {font_padding, y_pos + font_y_offset}, font_size, 0f, COLOR_TEXT);
 
         // badge
         float badge_x = (float)rec_padding + rec_width - badge_w;
         float badge_y = (float)y_pos + badge_y_offset;
         ZString count_str = string::tformat_zstr("%d", entry.text.len);
-        rl::Color badge_bg = is_selected ? TEXT : BODY;
-        rl::Color badge_txt_color = is_selected ? BODY : TEXT;
+        rl::Color badge_bg = is_selected ? COLOR_TEXT : COLOR_BODY;
+        rl::Color badge_txt_color = is_selected ? COLOR_BODY : COLOR_TEXT;
         rl::drawRectangleV({badge_x, badge_y}, {badge_w, badge_h}, badge_bg);
         rl::Vector2 count_size = rl::measureTextEx(self.font, count_str, 12, 0);
         rl::Vector2 count_pos = {
@@ -353,23 +356,38 @@ fn void Manager.show_clips(&self) {
     rl::endDrawing();
 }
 
-fn Manager init(usz limit = 10) {
-    ObjcClass cls = objc::class_by_name("NSPasteboard")!!;
-    Clipboard cp = {
-        .instance = objc::msg_send(cls, SendVoid, "generalPasteboard"),
-        .items_sel = objc::sel_registerName("pasteboardItems"),
-        .first_obj_sel = objc::sel_registerName("firstObject"),
-        .types_sel = objc::sel_registerName("types"),
-    };
-    Manager manager = {
-        .cp = cp,
-        .history_limit = limit,
-        // .font = rl::loadFont("resources/SF-Pro.ttf"),
-        .font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0),
-    };
-    manager.update();
-    rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
-    return manager;
+fn void Manager.show_all_text_view(&self) {
+    rl::beginDrawing();
+    rl::clearBackground(COLOR_BG);
+
+    usz reversed_idx = self.history.len() - 1 - self.selected_idx;
+    Entry? selected = self.history.get(reversed_idx);
+
+    if (try selected) {
+        // header
+        rl::drawRectangle(0, 0, SCREEN_WIDTH, 40, COLOR_BG);
+        rl::drawTextEx(self.font, "Full Text View", {20f, 10f}, 16, 0f, COLOR_TEXT);
+
+        // text area
+        rl::Vector2 scale = rl::getWindowScaleDPI();
+        rl::beginScissorMode(
+            x: 20 * (int)scale.x, 
+            y: 50 * (int)scale.y,
+            width: (SCREEN_WIDTH - 40) * (int)scale.x,
+            height: (SCREEN_HEIGHT - 80) * (int)scale.y,
+        );
+        rl::Vector2 pos = {
+            20 - self.scroll_pos.x,
+            50 - self.scroll_pos.y
+        }; 
+        rl::drawTextEx(self.font, selected.text.zstr_tcopy(), pos, 18f, 1f, COLOR_TEXT);
+        rl::endScissorMode();
+
+        // footer
+        ZString footer = string::tformat_zstr("Total characters: %d", selected.text.len);
+        rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 14, 0f, COLOR_TEXT);
+    }
+    rl::endDrawing();
 }
 
 // Grant your compiled binary Accessibility Permissions in 
@@ -390,5 +408,63 @@ fn void Manager.simulate_paste(&self) {
     cf::release(v_down);
     cf::release(v_up);
     cf::release(source);
+}
+
+fn Entry? Clipboard.current(&self) {
+
+    if (try safe = self.is_safe()) {
+        if (!safe) {
+            return {
+                .text = "***",
+                .timestamp = time::now(),
+            };
+        }
+
+        if (try clip = self.get_current_clip()) {
+            return clip;
+        }
+    }
+    return EMPTY?;
+}
+
+fn bool? Clipboard.is_safe(&self) {
+    @pool() {
+        ObjcId items_array = objc::msg_send(self.instance, SendVoid, "pasteboardItems");
+        ObjcId item = objc::msg_send(items_array, SendVoid, "firstObject");
+        if (item == null) return EMPTY?;
+
+        ObjcId types_array = objc::msg_send(item, SendVoid, "types");
+
+        ObjcId concealed_key = to_nsstr("org.nspasteboard.ConcealedType");
+        bool concealed = (bool)objc::msg_send(types_array, SendIdForBool, "containsObject:", concealed_key);
+        return !concealed;
+    };
+}
+
+fn Entry? Clipboard.get_current_clip(&self) {
+    @pool() {
+        ObjcId type_str = to_nsstr("public.utf8-plain-text");
+        ObjcId ns_str = objc::msg_send(self.instance, SendIdForId, "stringForType:", type_str);
+        if (ns_str == null) return EMPTY?;
+        ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
+        return {
+            .text = zstr.copy(mem),
+            .timestamp = time::now(),
+        };
+    };
+}
+
+fn void Clipboard.set(&self, String text) {
+    @pool() {
+        objc::msg_send(self.instance, SendVoid, "clearContents");
+        ObjcId ns_str = to_nsstr(text.zstr_tcopy());
+        ObjcId type_str = to_nsstr("public.utf8-plain-text");
+        objc::msg_send(self.instance, SendIdIdForBool, "setString:forType:", ns_str, type_str);
+    };
+}
+
+fn ObjcId to_nsstr(ZString str) {
+    ObjcClass str_cls = objc::getClass("NSString");
+    return objc::msg_send(str_cls, SendStringForId, "stringWithUTF8String:", str);
 }
 
