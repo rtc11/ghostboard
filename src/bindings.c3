@@ -1,3 +1,11 @@
+// CORE FOUNDATION
+module cf;
+extern fn void release(void* obj) @cname("CFRelease");
+extern fn void* runLoopGetCurrent() @cname("CFRunLoopGetCurrent");
+extern fn void runLoopAddSource(void* rl, void* source, void* mode) @cname("CFRunLoopAddSource");
+extern fn void* machPortCreateRunLoopSource(void* allocator, void* tap, int order) @cname("CFMachPortCreateRunLoopSource");
+extern const void* RUN_LOOP_COMMON_MODES @cname("kCFRunLoopCommonModes");
+
 // CORE GRAPHICS
 module cg;
 import std::io;
@@ -38,4 +46,11 @@ extern fn void contextSetTextPosition(void* c, double x, double y) @cname("CGCon
 extern fn void contextSetRGBFillColor(void* c, double red, double green, double blue, double alpha) @cname("CGContextSetRGBFillColor");
 extern fn void contextSetTextMatrix(void* c, double[6] matrix) @cname("CGContextSetTextMatrix");
 extern fn void contextFillRect(void* c, Rect rect) @cname("CGContextFillRect");
+
+// CORE TEXT
+module ct;
+
+extern fn void* fontCreateWithName(void* name, double size, void* matrix) @cname("CTFontCreateWithName");
+extern fn void* lineCreateWithAttributedString(void* attrString) @cname("CTLineCreateWithAttributedString");
+extern fn void lineDraw(void* line, void* context) @cname("CTLineDraw");
 
