@@ -391,8 +391,36 @@ fn void Manager.show_all_text_view(&self) {
 
     if (try selected) {
         // header
-        rl::drawRectangle(0, 0, SCREEN_WIDTH, 40, COLOR_BG);
-        rl::drawTextEx(self.font, "Full Text View", {20f, 10f}, 16, 0f, COLOR_TEXT);
+        String preview = selected.text;
+        if (try newline_pos = preview.index_of_char('\n')) {
+            preview = preview[..newline_pos];
+        }
+        int max_text_len = 90;
+        if (preview.len > max_text_len) {
+            preview = preview[..max_text_len];
+        }
+        int rec_padding = 20;
+        int rec_height = 25;
+        int rec_width = SCREEN_WIDTH - (rec_padding * 2);
+        int y_pos = 10;
+        rl::Rectangle header_rec = { (float)rec_padding, (float)y_pos, (float)rec_width, (float)rec_height};
+        rl::drawRectangleRounded(header_rec, 0.5, 12, COLOR_BODY);
+        float font_size = 20;
+        float font_y_offset = (rec_height - font_size) / 2f;
+        rl::drawTextEx(self.font, preview.zstr_tcopy(), {header_rec.x + 10, (float)y_pos + font_y_offset}, font_size, 0f, COLOR_TITLE);
+        float badge_w = 50;
+        float badge_h = (float)rec_height;
+        float badge_x = header_rec.x + header_rec.width - badge_w;
+        ZString count_str = string::tformat_zstr("%d", selected.text.len);
+        rl::Rectangle badge_rec = { badge_x, (float)y_pos, badge_w, badge_h};
+        rl::drawRectangleRounded(badge_rec, 0.5, 12, COLOR_BODY);
+        rl::drawRectangleRoundedLinesEx(badge_rec, 0.5, 24, 1f, COLOR_BADGE_LINE);
+        rl::Vector2 count_size = rl::measureTextEx(self.font, count_str, 12, 0);
+        rl::Vector2 count_pos = {
+            badge_x + (badge_w - count_size.x) / 2f,
+            (float)y_pos + (badge_h - count_size.y) / 2f,
+        };
+        rl::drawTextEx(self.font, count_str, count_pos, 14, 0, COLOR_BADGE_TEXT);
 
         // text area
         rl::Vector2 scale = rl::getWindowScaleDPI();
@@ -410,8 +438,8 @@ fn void Manager.show_all_text_view(&self) {
         rl::endScissorMode();
 
         // footer
-        ZString footer = string::tformat_zstr("Total characters: %d", selected.text.len);
-        rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 14, 0f, COLOR_TEXT);
+        ZString footer = string::tformat_zstr("o: inspect clip       enter: select clip       q: quit       hjkl: navigate");
+        rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 19, 0f, COLOR_FOOTER);
     }
     rl::endDrawing();
 }
