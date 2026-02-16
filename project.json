@@ -29,7 +29,7 @@
   // "target": "windows-x64",
   // Targets.
   "targets": {
-    "c3lipboard": {
+    "ghostboard": {
       // Executable or library.
       "type": "executable",
       "macos-min-version": "15.0",

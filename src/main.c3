@@ -1,5 +1,3 @@
-module c3lipboard;
-
 import std::io;
 import std::time;
 import std::thread;
@@ -8,20 +6,22 @@ import std::os::macos::objc;
 import cg, cf, ct;
 import raylib5;
 
-alias IdFnFloat = fn ObjcId(ObjcId, ObjcSelector, float);
-alias IdFnDouble = fn ObjcId(ObjcId, ObjcSelector, double);
-alias IdFnIdId = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcId);
-alias GetInt = fn int(ObjcId, ObjcSelector);
-alias SendIdForId = fn ObjcId(ObjcId, ObjcSelector, ObjcId);
-alias SendIntForId = fn ObjcId(ObjcId, ObjcSelector, int);
-alias SendStringForId = fn ObjcId(ObjcId, ObjcSelector, ZString);
-alias SendIdForBool = fn bool(ObjcId, ObjcSelector, ObjcId);
+alias IdFnFloat            = fn ObjcId(ObjcId, ObjcSelector, float);
+alias IdFnDouble           = fn ObjcId(ObjcId, ObjcSelector, double);
+alias IdFnIdId             = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcId);
+alias GetInt               = fn int   (ObjcId, ObjcSelector);
+alias GetId                = fn ObjcId(ObjcId, ObjcSelector);
+alias SendIdForId          = fn ObjcId(ObjcId, ObjcSelector, ObjcId);
+alias SendId               = fn void  (ObjcId, ObjcSelector, ObjcId);
+alias SendIntForId         = fn ObjcId(ObjcId, ObjcSelector, int);
+alias SendStringForId      = fn ObjcId(ObjcId, ObjcSelector, ZString);
+alias SendIdForBool        = fn bool  (ObjcId, ObjcSelector, ObjcId);
 alias StatusItemWithLength = fn ObjcId(ObjcId, ObjcSelector, double);
-alias SendBool = fn void(ObjcId, ObjcSelector, bool);
-alias SendTwoStrings = fn void(ObjcId, ObjcSelector, ZString, ZString);
-alias SendIdIdForBool = fn bool(ObjcId, ObjcSelector, ObjcId, ObjcId);
-alias SetPolicy = fn void(ObjcId, ObjcSelector, usz);
-alias SendAction = fn bool(ObjcId, ObjcSelector, ObjcSelector, ObjcId, ObjcId);
+alias SendBool             = fn void  (ObjcId, ObjcSelector, bool);
+alias SendTwoStrings       = fn void  (ObjcId, ObjcSelector, ZString, ZString);
+alias SendIdIdForBool      = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
+alias SetPolicy            = fn void  (ObjcId, ObjcSelector, usz);
+alias SendAction           = fn bool  (ObjcId, ObjcSelector, ObjcSelector, ObjcId, ObjcId);
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -94,7 +94,8 @@ fn void setup_tray() {
     ObjcId system_sbar = objc::msg_send(objc::getClass("NSStatusBar"), SendVoid, "systemStatusBar");
     ObjcId status_item = objc::msg_send(system_sbar, StatusItemWithLength, "statusItemWithLength:", -1.0);
     ObjcId button = objc::msg_send(status_item, SendVoid, "button");
-    objc::msg_send(button, SendIdForId, "setTitle:", to_nsstr("✄"));
+    ObjcId icon = generate_tray_icon();
+    objc::msg_send(button, SendId, "setImage:", icon);
 }
 
 fn void setup_event_tap(Manager* manager) {
@@ -184,6 +185,7 @@ fn void Manager.loop(&self) {
 
         int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
         if (current_count != last_count) {
+            io::printfn("new clip detected, storing..");
             last_count = current_count;
             self.update();
         }
@@ -520,3 +522,29 @@ fn ObjcId to_nsstr(ZString str) {
     return objc::msg_send(str_cls, SendStringForId, "stringWithUTF8String:", str);
 }
 
+fn ObjcId generate_tray_icon() {
+    rl::Image icon = rl::genImageColor(22, 22, {0, 0, 0, 0});
+    
+    rl::Color draw_color = rl::WHITE; 
+    int r = 4; 
+
+    rl::imageDrawRectangle(&icon, 4 + r, 6, 14 - (2 * r), 12, draw_color);
+    rl::imageDrawRectangle(&icon, 4, 6 + r, 14, 12 - (2 * r), draw_color);
+    rl::imageDrawCircle(&icon, 4 + r, 6 + r, r, draw_color);
+    rl::imageDrawCircle(&icon, 4 + 14 - r, 6 + r, r, draw_color);
+    rl::imageDrawCircle(&icon, 4 + r, 6 + 12 - r, r, draw_color);
+    rl::imageDrawCircle(&icon, 4 + 14 - r, 6 + 12 - r, r, draw_color);
+    rl::imageDrawCircle(&icon, 8, 10, 2, {0, 0, 0, 0});
+    rl::imageDrawCircle(&icon, 14, 10, 2, {0, 0, 0, 0});
+    
+    ZString icon_path = "/tmp/ghostboard_tray.png";
+    rl::exportImage(icon, icon_path);
+    
+    ObjcId ns_image = objc::msg_send(objc::getClass("NSImage"), GetId, "alloc");
+    ns_image = objc::msg_send(ns_image, SendIdForId, "initByReferencingFile:", to_nsstr(icon_path));
+    
+    objc::msg_send(ns_image, SendBool, "setTemplate:", true);
+    
+    rl::unloadImage(icon);
+    return ns_image;
+}
