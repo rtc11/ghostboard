@@ -4,8 +4,9 @@ import std::thread;
 import std::collections::list;
 import std::os::macos::objc, objc;
 import std::os::env;
-import std::core::log;
+import std::core::log, logger;
 import cg, cf, ct;
+import config;
 import raylib5;
 
 const int SCREEN_WIDTH = 800;
@@ -28,22 +29,15 @@ const rl::Color COLOR_FOOTER     = COLOR_GOLD;
 const rl::Color COLOR_BADGE_LINE = COLOR_GOLD;
 const rl::Color COLOR_BADGE_TEXT = COLOR_GREEN;
 
-const String STORAGE_DIR = ".config/ghostboard";
-const String STORAGE_FILE = "clips";
-const String LOG_FILE = "logs";
-
-faultdef EMPTY, REDACTED;
+faultdef EMPTY, REDACTED, MISSING;
 
 bool should_quit;
-
-struct FileLogger (log::Logger) {
-    File file;
-}
 
 struct Manager {
     Clipboard cp;
     List{Entry} history;
     usz history_limit;
+    Config config;
     int selected_idx;
     bool menu;
     bool show_all_text;
@@ -61,45 +55,30 @@ struct Clipboard {
 struct Entry {
     String text;
     TzDateTime timestamp;
+    usz hits;
 }
 
 fn void main(String[] args)
 {
-    setup_logging();
+    Config config = {
+        .config_dir = ".config/ghostboard",
+        .storage_file = "clips",
+        .log_file = "logs",
+    };
+
+    logger::setup_logging(&config);
     hide_from_dock();
     setup_tray();
     
     rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
     rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "GhostBoard");
 
-    Manager manager = init(limit: 17);
+    Manager manager = init(limit: 17, config: config);
 
     setup_event_tap(&manager);
     manager.loop();
 }
 
-fn void setup_logging() {
-    String? home = env::tget_var("HOME");
-    if (catch home) {
-        io::eprintfn("ERROR: could not get HOME directory");
-        return;
-    }
-    String dir_path = string::tformat("%s/%s", home, STORAGE_DIR);
-    io::path::mkdir(dir_path, true)!!;
-    String log_path = string::tformat("%s/%s", dir_path, LOG_FILE);
-    
-    File? file = file::open(log_path, "ab");
-    if (catch excuse = file) {
-        io::eprintfn("ERROR: could not open log file: %s", excuse);
-        return;
-    }
-    
-    FileLogger* logger = mem::new(FileLogger);
-    logger.file = file;
-    log::set_logger(logger);
-    log::set_priority_all(INFO); // DEBUG
-    log::info("=== GhostBoard started ===");
-}
 
 fn void hide_from_dock() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
@@ -184,7 +163,7 @@ fn void move_app_to_background() {
     objc::msg_send(shared_app, GetId_Id, "hide:", shared_app);
 }
 
-fn Manager init(usz limit = 10) {
+fn Manager init(usz limit = 10, Config config) {
     ObjcClass cls = objc::class_by_name("NSPasteboard")!!;
     Clipboard cp = {
         .instance = objc::msg_send(cls, SendVoid, "generalPasteboard"),
@@ -225,6 +204,7 @@ fn Manager init(usz limit = 10) {
     Manager manager = {
         .cp = cp,
         .history_limit = limit,
+        .config = config,
         .font = font,
     };
     manager.load_from_file();
@@ -365,6 +345,7 @@ fn void Manager.add(&self, String text) {
     Entry entry = {
         .text = text.copy(mem),
         .timestamp = datetime::now().to_local(),
+        .hits = 1,
     };
 
     self.history.push(entry);
@@ -410,12 +391,14 @@ fn bool Manager.update(&self) {
         log::info("did not save empty string");
         return false;
     }
-    if (try last = self.history.last()) {
-        if (cur.text == last.text) {
-            log::info("the clip is already saved as latest");
-            return false;
-        }
-    }
+
+    usz? existing_idx = self.history.findTextIndex(cur.text);
+    if (try existing_idx) {
+        self.history[existing_idx].hits++;
+        log::info("clip already exists, incremented hits to %d", self.history[existing_idx].hits);
+        self.save_to_file();
+        return false;
+    } 
 
     log::info("new clip saved");
     self.add(cur.text);
@@ -430,12 +413,19 @@ fn bool Manager.update(&self) {
     return true;
 }
 
+fn usz? List{Entry}.findTextIndex(&self, String text) {
+    foreach(i, entry: self) {
+        if (entry.text == text) return i;
+    }
+    return MISSING?;
+}
+
 fn String Manager.get_storage_path(&self) {
     String? home = env::tget_var("HOME");
-    if (catch home) return STORAGE_FILE;
-    String dir_path = string::tformat("%s/%s", home, STORAGE_DIR);
+    if (catch home) return self.config.storage_file;
+    String dir_path = string::tformat("%s/%s", home, self.config.config_dir);
     io::path::mkdir(dir_path, true)!!;
-    return string::tformat("%s/%s", dir_path, STORAGE_FILE);
+    return string::tformat("%s/%s", dir_path, self.config.storage_file);
 }
 
 fn void Manager.save_to_file(&self) {
@@ -452,6 +442,8 @@ fn void Manager.save_to_file(&self) {
         io::write_any(&file, &timestamp)!!;
         int gmt_offset = entry.timestamp.gmt_offset;
         io::write_any(&file, &gmt_offset)!!;
+        usz hits = entry.hits;
+        io::write_any(&file, &hits)!!;
         usz text_len = entry.text.len;
         io::write_any(&file, &text_len)!!;
         io::write_all(&file, entry.text)!!;
@@ -474,6 +466,9 @@ fn void Manager.load_from_file(&self) {
         int gmt_offset;
         if (catch io::read_any(&file, &gmt_offset)) break;
         
+        usz hits;
+        if (catch io::read_any(&file, &hits)) break;
+        
         usz text_len;
         if (catch io::read_any(&file, &text_len)) break;
         
@@ -486,6 +481,7 @@ fn void Manager.load_from_file(&self) {
         Entry entry = {
             .text = ((String)buffer).copy(mem),
             .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
+            .hits = hits,
         };
         self.history.push(entry);
         mem::free(buffer);
@@ -497,7 +493,8 @@ fn void Manager.load_from_file(&self) {
 fn void draw_rounded_corners(rl::Rectangle rec, rl::Color color) {
     float roundness = 0.5;
     int segments = 12; //  higher is smoother
-    rl::drawRectangleRounded(rec, roundness, segments, color); } 
+    rl::drawRectangleRounded(rec, roundness, segments, color);
+} 
 
 fn void Manager.show_clips(&self) {
     rl::beginDrawing();
@@ -727,19 +724,6 @@ fn void Clipboard.set(&self, String text) {
     };
 }
 
-fn void FileLogger.log(&self, log::LogPriority priority, log::LogCategory category, log::LogTag tag, String file, String function, int line, String fmt, any[] args) @dynamic {
-    @pool() {
-        TzDateTime time = datetime::now().to_local();
-        DString str;
-        str.tinit(256);
-        defer str.free();
-        str.appendf("[%02d:%02d:%02d] [%s] ", time.hour, time.min, time.sec, priority);
-        str.appendf(fmt, ...args);
-        str.append_char('\n');
-        if (catch io::write_all(&self.file, str.str_view())) return;
-        (void)self.file.flush();
-    };
-}
 
 fn ObjcId to_nsstr(ZString str) {
     ObjcClass str_cls = objc::getClass("NSString");
