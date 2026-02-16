@@ -106,26 +106,26 @@ fn void setup_event_tap(Manager* manager) {
     ulong mask = (1 << 10);
     void* tap = cg::eventTapCreate(0, 0, 0, mask, &on_key_event, manager);
     if (tap == null) {
-        io::printfn("failed to create event tap. check Accessibility Permissions!");
+        io::printfn("ERROR: failed to create event tap. check Accessibility Permissions!");
         return;
     }
     void* run_loop_source = cf::machPortCreateRunLoopSource(null, tap, 0);
     cf::runLoopAddSource(cf::runLoopGetCurrent(), run_loop_source, cf::RUN_LOOP_COMMON_MODES);
     cg::eventTapEnable(tap, true);
-    io::printfn("global event tap active.");
+    io::printfn("INFO: global event tap active.");
 }
 
 fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     if (type != 10) return event;
     ulong flags = cg::eventGetFlags(event);
     ushort keycode = (ushort)cg::eventGetIntegerValueField(event, 9);
-    // io::printfn("key pressed event detected: %s", keycode);
+    // io::printfn("INFO: key pressed event detected: %s", keycode);
     bool control = (flags & 0x40000) != 0;
     bool shift = (flags & 0x20000) != 0;
     if (control && shift && keycode == 0x09) {
         Manager* manager = (Manager*)refcon;
         if (!manager.menu) {
-            io::printfn("global hotkey detected! enabling menu");
+            io::printfn("INFO: global hotkey detected! enabling menu");
             manager.menu = true;
             manager.show_window();
         }
@@ -192,7 +192,7 @@ fn void Manager.loop(&self) {
 
         int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
         if (current_count != last_count) {
-            io::printfn("new clip detected, storing..");
+            io::printfn("INFO: new clip detected");
             last_count = current_count;
             self.update();
         }
@@ -313,25 +313,41 @@ fn void Manager.remove_selected(&self) {
     }
     
     self.save_to_file();
-    io::printfn("removed clip at index %d", reversed_idx);
+    io::printfn("INFO: removed clip at index %d", reversed_idx);
 }
 
 fn bool Manager.update(&self) {
     bool? safe = self.cp.is_safe();
-    if (catch safe) return false;
-    if (!safe) return false;
+    if (catch safe) {
+        io::printfn("WARN: the clip was missing from last clip on macOS");
+        return false;
+    }
+    if (!safe) {
+        io::printfn("WARN: the clip was concealed.");
+        return false;
+    }
     Entry? cur = self.cp.get_current_clip();
-    if (catch cur) return false;
-    if (cur.text.len == 0) return false;
+    if (catch cur) {
+        io::printfn("ERROR: failed to get the clip as text from macOS");
+        return false;
+    }
+    if (cur.text.len == 0) {
+        io::printfn("INFO: did not save empty string");
+        return false;
+    }
     if (try last = self.history.last()) {
-        if (cur.text == last.text) return false;
+        if (cur.text == last.text) {
+            io::printfn("INFO: the clip is already saved as latest");
+            return false;
+        }
     }
 
+    io::printfn("INFO: new clip saved");
     self.add(cur.text);
 
     if (self.history.len() > self.history_limit) {
         if (try old = self.history.pop_first()) {
-            io::printfn("removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
+            io::printfn("INFO: removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
             old.text.free(mem);
             self.save_to_file();
         }
@@ -351,7 +367,7 @@ fn void Manager.save_to_file(&self) {
     String path = self.get_storage_path();
     File? file = file::open(path, "wb");
     if (catch file) {
-        io::printfn("failed to open file for writing: %s", path);
+        io::printfn("ERROR: failed to open file for writing: %s", path);
         return;
     }
     defer (void)file.close();
@@ -371,7 +387,7 @@ fn void Manager.load_from_file(&self) {
     String path = self.get_storage_path();
     File? file = file::open(path, "rb");
     if (catch file) {
-        io::printfn("no existing clipboard history found");
+        io::printfn("INFO: no existing clipboard history found");
         return;
     }
     defer (void)file.close();
@@ -400,7 +416,7 @@ fn void Manager.load_from_file(&self) {
         mem::free(buffer);
     }
     
-    io::printfn("loaded %d clips from storage", self.history.len());
+    io::printfn("INFO: loaded %d clips from storage", self.history.len());
 }
 
 fn void draw_rounded_corners(rl::Rectangle rec, rl::Color color) {
