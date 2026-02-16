@@ -6,6 +6,7 @@ c3c build
 # Set app name
 APP_NAME="GhostBoard"
 BUNDLE_DIR="build/${APP_NAME}.app"
+SIGNING_IDENTITY="GhostBoard Developer"
 
 # Remove old bundle if it exists
 rm -rf "${BUNDLE_DIR}"
@@ -47,6 +48,19 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" << EOF
 </dict>
 </plist>
 EOF
+
+# Code sign the app
+echo "Signing the app..."
+codesign --force --deep --sign "$SIGNING_IDENTITY" "${BUNDLE_DIR}"
+
+if [ $? -eq 0 ]; then
+    echo "✓ App successfully signed with: $SIGNING_IDENTITY"
+    codesign -dvvv "${BUNDLE_DIR}" 2>&1 | grep "Authority"
+else
+    echo "⚠ Warning: Could not sign app. Signature: '$SIGNING_IDENTITY' not found."
+    echo "  Run ./scripts/create-cert.sh to create signing certificate."
+    echo "  App will still work but Accessibility permissions won't persist across rebuilds."
+fi
 
 echo "✓ App bundle created at: ${BUNDLE_DIR}"
 echo "✓ You can now run it by double-clicking or: open ${BUNDLE_DIR}"
