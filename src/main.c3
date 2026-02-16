@@ -417,7 +417,15 @@ fn void Manager.show_clips(&self) {
     ZString header_txt = "GhostBoard".zstr_tcopy();
     float header_font_size = 24f;
     rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
-    float header_x = (SCREEN_WIDTH - header_size.x) / 2f; 
+    float header_x = (SCREEN_WIDTH - header_size.x) / 2f;
+    int header_padding = 10;
+    rl::Rectangle header_rec = { 
+        header_x - header_padding, 
+        10 - header_padding / 2f, 
+        header_size.x + header_padding * 2f, 
+        header_size.y + header_padding 
+    };
+    rl::drawRectangleRounded(header_rec, 0.5, 12, COLOR_BODY);
     rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, COLOR_TITLE);
 
     int spacing = 30;
@@ -454,7 +462,8 @@ fn void Manager.show_clips(&self) {
         if (text.len > max_text_len) {
             text = text[..max_text_len];
         }
-        rl::drawTextEx(self.font, text.zstr_tcopy(), {font_padding, y_pos + font_y_offset}, font_size, 0f, COLOR_TEXT);
+        rl::Color text_color = is_selected ? COLOR_TITLE : COLOR_TEXT;
+        rl::drawTextEx(self.font, text.zstr_tcopy(), {font_padding, y_pos + font_y_offset}, font_size, 0f, text_color);
 
         // badge
         float badge_x = (float)rec_padding + rec_width - badge_w;
@@ -530,23 +539,34 @@ fn void Manager.show_all_text_view(&self) {
         rl::drawTextEx(self.font, count_str, count_pos, 14, 0, COLOR_BADGE_TEXT);
 
         // text area
+        rl::Rectangle text_area_rec = { 20, 50, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80 };
+        rl::drawRectangleRounded(text_area_rec, 0.2, 8, COLOR_BODY);
+        
+        int text_padding = 20;
         rl::Vector2 scale = rl::getWindowScaleDPI();
         rl::beginScissorMode(
-            x: 20 * (int)scale.x, 
-            y: 50 * (int)scale.y,
-            width: (SCREEN_WIDTH - 40) * (int)scale.x,
-            height: (SCREEN_HEIGHT - 80) * (int)scale.y,
+            x: (20 + text_padding) * (int)scale.x, 
+            y: (50 + text_padding) * (int)scale.y,
+            width: (SCREEN_WIDTH - 40 - text_padding * 2) * (int)scale.x,
+            height: (SCREEN_HEIGHT - 80 - text_padding * 2) * (int)scale.y,
         );
         rl::Vector2 pos = {
-            20 - self.scroll_pos.x,
-            50 - self.scroll_pos.y
+            20 + (float) text_padding - self.scroll_pos.x,
+            50 + (float) text_padding - self.scroll_pos.y
         }; 
         rl::drawTextEx(self.font, selected.text.zstr_tcopy(), pos, 18f, 1f, COLOR_TEXT);
         rl::endScissorMode();
 
+        // timestamp
+        ZString timestamp = string::tformat_zstr("%s", selected.timestamp);
+        rl::Vector2 timestamp_size = rl::measureTextEx(self.font, timestamp, 16, 0);
+        float timestamp_x = (SCREEN_WIDTH - timestamp_size.x) - 25;
+        rl::drawTextEx(self.font, timestamp, {timestamp_x, SCREEN_HEIGHT - 30f}, 16, 0f, COLOR_FOOTER);
+
         // footer
         ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
         rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 19, 0f, COLOR_FOOTER);
+
     }
     rl::endDrawing();
 }
