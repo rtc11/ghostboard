@@ -78,7 +78,7 @@ fn void main(String[] args)
     rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
     rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "GhostBoard");
 
-    Manager manager = init(limit: 10);
+    Manager manager = init(limit: 20);
 
     setup_event_tap(&manager);
     manager.loop();
@@ -249,7 +249,7 @@ fn void Manager.menu_mode(&self) {
         rl::setWindowState(WINDOW_HIDDEN);
         move_app_to_background();
 
-        // wait for the os to copmlete the transition
+        // wait for the os to complete the transition
         thread::sleep(time::ms(50));
         self.simulate_paste();
     }
@@ -472,23 +472,6 @@ fn void Manager.simulate_paste(&self) {
     cf::release(v_down);
     cf::release(v_up);
     cf::release(source);
-}
-
-fn Entry? Clipboard.current(&self) {
-
-    if (try safe = self.is_safe()) {
-        if (!safe) {
-            return {
-                .text = "***",
-                .timestamp = datetime::now(),
-            };
-        }
-
-        if (try clip = self.get_current_clip()) {
-            return clip;
-        }
-    }
-    return EMPTY?;
 }
 
 fn bool? Clipboard.is_safe(&self) {
