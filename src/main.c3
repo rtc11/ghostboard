@@ -4,8 +4,11 @@ import std::thread;
 import std::collections::list;
 import std::os::macos::objc;
 import std::os::env;
+import std::core::log;
 import cg, cf, ct;
 import raylib5;
+
+extern fn void objc_registerClassPair(ObjcClass cls);
 
 alias IdFnFloat            = fn ObjcId(ObjcId, ObjcSelector, float);
 alias IdFnDouble           = fn ObjcId(ObjcId, ObjcSelector, double);
@@ -23,18 +26,19 @@ alias SendTwoStrings       = fn void  (ObjcId, ObjcSelector, ZString, ZString);
 alias SendIdIdForBool      = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
 alias SetPolicy            = fn void  (ObjcId, ObjcSelector, usz);
 alias SendAction           = fn bool  (ObjcId, ObjcSelector, ObjcSelector, ObjcId, ObjcId);
+alias IdFnIdSelId          = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcSelector, ObjcId);
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
 
 const rl::Color COLOR_RED    = { 177, 66, 66, 255 };      // #B14242
-const rl::Color COLOR_ORANGE = { 196, 105, 61, 255};      //#C4693D
-const rl::Color COLOR_BLUE   = { 74, 139, 139, 255};      //#4A8B8B
-const rl::Color COLOR_PURPLE = { 189, 147, 249, 255 };    //#BD93F9
-const rl::Color COLOR_GOLD   = { 143, 141, 52, 255 };     //#8f8d34
+const rl::Color COLOR_ORANGE = { 196, 105, 61, 255};      // #C4693D
+const rl::Color COLOR_BLUE   = { 74, 139, 139, 255};      // #4A8B8B
+const rl::Color COLOR_PURPLE = { 189, 147, 249, 255 };    // #BD93F9
+const rl::Color COLOR_GOLD   = { 143, 141, 52, 255 };     // #8f8d34
 const rl::Color COLOR_BLACK  = { 22, 24, 26, 245};        // #16181af5
 const rl::Color COLOR_GRAY  = { 13, 18, 20, 245};         // #0d1214f5
-const rl::Color COLOR_GREEN  = {189, 255, 192, 255};      //#c6ffc0
+const rl::Color COLOR_GREEN  = {189, 255, 192, 255};      // #c6ffc0
 
 const rl::Color COLOR_BG         = COLOR_BLACK;
 const rl::Color COLOR_BODY       = COLOR_GRAY;
@@ -46,8 +50,15 @@ const rl::Color COLOR_BADGE_TEXT = COLOR_GREEN;
 
 const String STORAGE_DIR = ".config/ghostboard";
 const String STORAGE_FILE = "clips";
+const String LOG_FILE = "logs";
 
 faultdef EMPTY, REDACTED;
+
+bool should_quit;
+
+struct FileLogger (log::Logger) {
+    File file;
+}
 
 struct Manager {
     Clipboard cp;
@@ -72,10 +83,9 @@ struct Entry {
     TzDateTime timestamp;
 }
 
-// Grant your terminal and/or binary Accessibility Permissions in 
-// System Settings > Privacy & Security > Accessibility. 
 fn void main(String[] args)
 {
+    setup_logging();
     hide_from_dock();
     setup_tray();
     
@@ -88,10 +98,37 @@ fn void main(String[] args)
     manager.loop();
 }
 
+fn void setup_logging() {
+    String? home = env::tget_var("HOME");
+    if (catch home) {
+        io::eprintfn("ERROR: could not get HOME directory");
+        return;
+    }
+    String dir_path = string::tformat("%s/%s", home, STORAGE_DIR);
+    io::path::mkdir(dir_path, true)!!;
+    String log_path = string::tformat("%s/%s", dir_path, LOG_FILE);
+    
+    File? file = file::open(log_path, "ab");
+    if (catch excuse = file) {
+        io::eprintfn("ERROR: could not open log file: %s", excuse);
+        return;
+    }
+    
+    FileLogger* logger = mem::new(FileLogger);
+    logger.file = file;
+    log::set_logger(logger);
+    log::set_priority_all(INFO); // DEBUG
+    log::info("=== GhostBoard started ===");
+}
+
 fn void hide_from_dock() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
     objc::msg_send(shared_app, SetPolicy, "setActivationPolicy:", 1);
     rl::setConfigFlags(ConfigFlag.WINDOW_HIDDEN | ConfigFlag.WINDOW_ALWAYS_RUN);
+}
+
+fn void quit_action(ObjcId self, ObjcSelector _cmd, ObjcId sender) {
+    should_quit = true;
 }
 
 fn void setup_tray() {
@@ -100,32 +137,60 @@ fn void setup_tray() {
     ObjcId button = objc::msg_send(status_item, SendVoid, "button");
     ObjcId icon = generate_tray_icon();
     objc::msg_send(button, SendId, "setImage:", icon);
+
+    // Create menu
+    ObjcId menu = objc::msg_send(objc::getClass("NSMenu"), GetId, "alloc");
+    menu = objc::msg_send(menu, SendVoid, "init");
+    
+    // Create custom target class for quit action
+    ObjcClass target_class = objc::allocateClassPair(objc::getClass("NSObject"), "GhostBoardQuitTarget", 0);
+    objc::class_addMethod(target_class, objc::sel_registerName("quitAction:"), (void*)&quit_action, "v@:@");
+    objc_registerClassPair(target_class);
+    
+    // Create exit menu item
+    ObjcId exit_item = objc::msg_send(objc::getClass("NSMenuItem"), GetId, "alloc");
+    ObjcId exit_title = to_nsstr("Quit GhostBoard");
+    ObjcSelector quit_sel = objc::sel_registerName("quitAction:");
+    ObjcId key_equivalent = to_nsstr("q");
+    exit_item = objc::msg_send(exit_item, IdFnIdSelId, "initWithTitle:action:keyEquivalent:", exit_title, quit_sel, key_equivalent);
+    ObjcId target = objc::msg_send(target_class, SendVoid, "alloc");
+    target = objc::msg_send(target, SendVoid, "init");
+    objc::msg_send(exit_item, SendId, "setTarget:", target);
+    
+    // Add item to menu
+    objc::msg_send(menu, SendId, "addItem:", exit_item);
+    
+    // Set menu on status item
+    objc::msg_send(status_item, SendId, "setMenu:", menu);
 }
 
 fn void setup_event_tap(Manager* manager) {
-    ulong mask = (1 << 10);
-    void* tap = cg::eventTapCreate(0, 0, 0, mask, &on_key_event, manager);
+    log::info("Setting up event tap for global hotkey (Ctrl+Shift+V)...");
+    void* tap = cg::eventTapCreate(tap: 0, place: 0, options: 0, mask: (1<<10), callback: &on_key_event, user_info: manager);
     if (tap == null) {
-        io::printfn("ERROR: failed to create event tap. check Accessibility Permissions!");
+        log::error("Failed to create event tap - Accessibility Permissions required!");
+        log::error("Go to System Settings > Privacy & Security > Accessibility");
+        log::error("Remove GhostBoard.app, add it back, enable it, then restart.");
+        log::error("If already added, try removing and re-adding after code changes.");
         return;
     }
     void* run_loop_source = cf::machPortCreateRunLoopSource(null, tap, 0);
     cf::runLoopAddSource(cf::runLoopGetCurrent(), run_loop_source, cf::RUN_LOOP_COMMON_MODES);
     cg::eventTapEnable(tap, true);
-    io::printfn("INFO: global event tap active.");
+    log::info("Global event tap active! Press Ctrl+Shift+V to open menu.");
 }
 
 fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     if (type != 10) return event;
     ulong flags = cg::eventGetFlags(event);
     ushort keycode = (ushort)cg::eventGetIntegerValueField(event, 9);
-    // io::printfn("INFO: key pressed event detected: %s", keycode);
+    log::debug("key event - keycode: 0x%x, flags: 0x%x", keycode, flags);
     bool control = (flags & 0x40000) != 0;
     bool shift = (flags & 0x20000) != 0;
     if (control && shift && keycode == 0x09) {
         Manager* manager = (Manager*)refcon;
         if (!manager.menu) {
-            io::printfn("INFO: global hotkey detected! enabling menu");
+            log::info("global hotkey detected! enabling menu");
             manager.menu = true;
             manager.show_window();
         }
@@ -147,10 +212,40 @@ fn Manager init(usz limit = 10) {
         .first_obj_sel = objc::sel_registerName("firstObject"),
         .types_sel = objc::sel_registerName("types"),
     };
+    
+    // Try to get bundle resource path
+    ObjcId bundle = objc::msg_send(objc::getClass("NSBundle"), SendVoid, "mainBundle");
+    ObjcId resource_path = objc::msg_send(bundle, SendVoid, "resourcePath");
+    ZString bundle_resources = null;
+    if (resource_path != null) {
+        bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
+    }
+    
+    Font font;
+    if (bundle_resources != null) {
+        String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
+        log::debug("trying to load font from bundle: %s", font_path);
+        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, null, 0);
+    } else {
+        font.texture.id = 0;
+    }
+    
+    if (font.texture.id == 0) {
+        log::debug("failed to load font from bundle, trying resources/SF-Pro.ttf");
+        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0);
+        if (font.texture.id == 0) {
+            log::warn("failed to load font from resources/SF-Pro.ttf");
+        } else {
+            log::info("loaded font from resources/SF-Pro.ttf");
+        }
+    } else {
+        log::info("loaded font from bundle");
+    }
+    
     Manager manager = {
         .cp = cp,
         .history_limit = limit,
-        .font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0),
+        .font = font,
     };
     manager.load_from_file();
     manager.update();
@@ -183,7 +278,7 @@ fn void Manager.show_window(&self) {
 fn void Manager.loop(&self) {
     int last_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
 
-    while (!rl::windowShouldClose()) {
+    while (!rl::windowShouldClose() && !should_quit) {
         if (self.menu && !rl::isWindowFocused()) {
             self.menu = false;
             rl::setWindowState(WINDOW_HIDDEN);
@@ -192,7 +287,7 @@ fn void Manager.loop(&self) {
 
         int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
         if (current_count != last_count) {
-            io::printfn("INFO: new clip detected");
+            log::info("new clip detected");
             last_count = current_count;
             self.update();
         }
@@ -313,41 +408,41 @@ fn void Manager.remove_selected(&self) {
     }
     
     self.save_to_file();
-    io::printfn("INFO: removed clip at index %d", reversed_idx);
+    log::info("removed clip at index %d", reversed_idx);
 }
 
 fn bool Manager.update(&self) {
     bool? safe = self.cp.is_safe();
     if (catch safe) {
-        io::printfn("WARN: the clip was missing from last clip on macOS");
+        log::warn("the clip was missing from last clip on macOS");
         return false;
     }
     if (!safe) {
-        io::printfn("WARN: the clip was concealed.");
+        log::warn("the clip was concealed.");
         return false;
     }
     Entry? cur = self.cp.get_current_clip();
     if (catch cur) {
-        io::printfn("ERROR: failed to get the clip as text from macOS");
+        log::error("failed to get the clip as text from macOS");
         return false;
     }
     if (cur.text.len == 0) {
-        io::printfn("INFO: did not save empty string");
+        log::info("did not save empty string");
         return false;
     }
     if (try last = self.history.last()) {
         if (cur.text == last.text) {
-            io::printfn("INFO: the clip is already saved as latest");
+            log::info("the clip is already saved as latest");
             return false;
         }
     }
 
-    io::printfn("INFO: new clip saved");
+    log::info("new clip saved");
     self.add(cur.text);
 
     if (self.history.len() > self.history_limit) {
         if (try old = self.history.pop_first()) {
-            io::printfn("INFO: removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
+            log::info("removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
             old.text.free(mem);
             self.save_to_file();
         }
@@ -367,7 +462,7 @@ fn void Manager.save_to_file(&self) {
     String path = self.get_storage_path();
     File? file = file::open(path, "wb");
     if (catch file) {
-        io::printfn("ERROR: failed to open file for writing: %s", path);
+        log::error("failed to open file for writing: %s", path);
         return;
     }
     defer (void)file.close();
@@ -387,7 +482,7 @@ fn void Manager.load_from_file(&self) {
     String path = self.get_storage_path();
     File? file = file::open(path, "rb");
     if (catch file) {
-        io::printfn("INFO: no existing clipboard history found");
+        log::info("no existing clipboard history found");
         return;
     }
     defer (void)file.close();
@@ -416,7 +511,7 @@ fn void Manager.load_from_file(&self) {
         mem::free(buffer);
     }
     
-    io::printfn("INFO: loaded %d clips from storage", self.history.len());
+    log::info("loaded %d clips from storage", self.history.len());
 }
 
 fn void draw_rounded_corners(rl::Rectangle rec, rl::Color color) {
@@ -640,6 +735,20 @@ fn void Clipboard.set(&self, String text) {
         ObjcId ns_str = to_nsstr(text.zstr_tcopy());
         ObjcId type_str = to_nsstr("public.utf8-plain-text");
         objc::msg_send(self.instance, SendIdIdForBool, "setString:forType:", ns_str, type_str);
+    };
+}
+
+fn void FileLogger.log(&self, log::LogPriority priority, log::LogCategory category, log::LogTag tag, String file, String function, int line, String fmt, any[] args) @dynamic {
+    @pool() {
+        TzDateTime time = datetime::now().to_local();
+        DString str;
+        str.tinit(256);
+        defer str.free();
+        str.appendf("[%02d:%02d:%02d] [%s] ", time.hour, time.min, time.sec, priority);
+        str.appendf(fmt, ...args);
+        str.append_char('\n');
+        if (catch io::write_all(&self.file, str.str_view())) return;
+        (void)self.file.flush();
     };
 }
 
