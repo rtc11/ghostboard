@@ -524,7 +524,7 @@ fn void Manager.show_clips(&self) {
     int rec_height = 25;
     int rec_width = SCREEN_WIDTH - (rec_padding * 2);
 
-    int max_text_len = 90;
+    int max_text_len = 84;
     int font_size = 20;
     int font_padding = 25;
     float font_y_offset = (rec_height - (float)font_size) / 2f;
