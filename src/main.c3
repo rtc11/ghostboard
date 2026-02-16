@@ -2,31 +2,11 @@ import std::io;
 import std::time;
 import std::thread;
 import std::collections::list;
-import std::os::macos::objc;
+import std::os::macos::objc, objc;
 import std::os::env;
 import std::core::log;
 import cg, cf, ct;
 import raylib5;
-
-extern fn void objc_registerClassPair(ObjcClass cls);
-
-alias IdFnFloat            = fn ObjcId(ObjcId, ObjcSelector, float);
-alias IdFnDouble           = fn ObjcId(ObjcId, ObjcSelector, double);
-alias IdFnIdId             = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcId);
-alias GetInt               = fn int   (ObjcId, ObjcSelector);
-alias GetId                = fn ObjcId(ObjcId, ObjcSelector);
-alias SendIdForId          = fn ObjcId(ObjcId, ObjcSelector, ObjcId);
-alias SendId               = fn void  (ObjcId, ObjcSelector, ObjcId);
-alias SendIntForId         = fn ObjcId(ObjcId, ObjcSelector, int);
-alias SendStringForId      = fn ObjcId(ObjcId, ObjcSelector, ZString);
-alias SendIdForBool        = fn bool  (ObjcId, ObjcSelector, ObjcId);
-alias StatusItemWithLength = fn ObjcId(ObjcId, ObjcSelector, double);
-alias SendBool             = fn void  (ObjcId, ObjcSelector, bool);
-alias SendTwoStrings       = fn void  (ObjcId, ObjcSelector, ZString, ZString);
-alias SendIdIdForBool      = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
-alias SetPolicy            = fn void  (ObjcId, ObjcSelector, usz);
-alias SendAction           = fn bool  (ObjcId, ObjcSelector, ObjcSelector, ObjcId, ObjcId);
-alias IdFnIdSelId          = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcSelector, ObjcId);
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -92,7 +72,7 @@ fn void main(String[] args)
     rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
     rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "GhostBoard");
 
-    Manager manager = init(limit: 20);
+    Manager manager = init(limit: 17);
 
     setup_event_tap(&manager);
     manager.loop();
@@ -123,7 +103,7 @@ fn void setup_logging() {
 
 fn void hide_from_dock() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
-    objc::msg_send(shared_app, SetPolicy, "setActivationPolicy:", 1);
+    objc::msg_send(shared_app, SendUsz, "setActivationPolicy:", 1);
     rl::setConfigFlags(ConfigFlag.WINDOW_HIDDEN | ConfigFlag.WINDOW_ALWAYS_RUN);
 }
 
@@ -133,7 +113,7 @@ fn void quit_action(ObjcId self, ObjcSelector _cmd, ObjcId sender) {
 
 fn void setup_tray() {
     ObjcId system_sbar = objc::msg_send(objc::getClass("NSStatusBar"), SendVoid, "systemStatusBar");
-    ObjcId status_item = objc::msg_send(system_sbar, StatusItemWithLength, "statusItemWithLength:", -1.0);
+    ObjcId status_item = objc::msg_send(system_sbar, GetId_double, "statusItemWithLength:", -1.0);
     ObjcId button = objc::msg_send(status_item, SendVoid, "button");
     ObjcId icon = generate_tray_icon();
     objc::msg_send(button, SendId, "setImage:", icon);
@@ -145,14 +125,14 @@ fn void setup_tray() {
     // Create custom target class for quit action
     ObjcClass target_class = objc::allocateClassPair(objc::getClass("NSObject"), "GhostBoardQuitTarget", 0);
     objc::class_addMethod(target_class, objc::sel_registerName("quitAction:"), (void*)&quit_action, "v@:@");
-    objc_registerClassPair(target_class);
+    objc::register_class_pair(target_class);
     
     // Create exit menu item
     ObjcId exit_item = objc::msg_send(objc::getClass("NSMenuItem"), GetId, "alloc");
     ObjcId exit_title = to_nsstr("Quit GhostBoard");
     ObjcSelector quit_sel = objc::sel_registerName("quitAction:");
     ObjcId key_equivalent = to_nsstr("q");
-    exit_item = objc::msg_send(exit_item, IdFnIdSelId, "initWithTitle:action:keyEquivalent:", exit_title, quit_sel, key_equivalent);
+    exit_item = objc::msg_send(exit_item, GetId_IdSelId, "initWithTitle:action:keyEquivalent:", exit_title, quit_sel, key_equivalent);
     ObjcId target = objc::msg_send(target_class, SendVoid, "alloc");
     target = objc::msg_send(target, SendVoid, "init");
     objc::msg_send(exit_item, SendId, "setTarget:", target);
@@ -201,7 +181,7 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
 
 fn void move_app_to_background() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
-    objc::msg_send(shared_app, SendIdForId, "hide:", shared_app);
+    objc::msg_send(shared_app, GetId_Id, "hide:", shared_app);
 }
 
 fn Manager init(usz limit = 10) {
@@ -711,7 +691,7 @@ fn bool? Clipboard.is_safe(&self) {
         ObjcId types_array = objc::msg_send(item, SendVoid, "types");
 
         ObjcId concealed_key = to_nsstr("org.nspasteboard.ConcealedType");
-        bool concealed = (bool)objc::msg_send(types_array, SendIdForBool, "containsObject:", concealed_key);
+        bool concealed = (bool)objc::msg_send(types_array, GetBool_Id, "containsObject:", concealed_key);
         return !concealed;
     };
 }
@@ -719,7 +699,7 @@ fn bool? Clipboard.is_safe(&self) {
 fn Entry? Clipboard.get_current_clip(&self) {
     @pool() {
         ObjcId type_str = to_nsstr("public.utf8-plain-text");
-        ObjcId ns_str = objc::msg_send(self.instance, SendIdForId, "stringForType:", type_str);
+        ObjcId ns_str = objc::msg_send(self.instance, GetId_Id, "stringForType:", type_str);
         if (ns_str == null) return EMPTY?;
         ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
         return {
@@ -734,7 +714,7 @@ fn void Clipboard.set(&self, String text) {
         objc::msg_send(self.instance, SendVoid, "clearContents");
         ObjcId ns_str = to_nsstr(text.zstr_tcopy());
         ObjcId type_str = to_nsstr("public.utf8-plain-text");
-        objc::msg_send(self.instance, SendIdIdForBool, "setString:forType:", ns_str, type_str);
+        objc::msg_send(self.instance, GetBool_IdId, "setString:forType:", ns_str, type_str);
     };
 }
 
@@ -754,7 +734,7 @@ fn void FileLogger.log(&self, log::LogPriority priority, log::LogCategory catego
 
 fn ObjcId to_nsstr(ZString str) {
     ObjcClass str_cls = objc::getClass("NSString");
-    return objc::msg_send(str_cls, SendStringForId, "stringWithUTF8String:", str);
+    return objc::msg_send(str_cls, GetId_str, "stringWithUTF8String:", str);
 }
 
 fn ObjcId generate_tray_icon() {
@@ -776,7 +756,7 @@ fn ObjcId generate_tray_icon() {
     rl::exportImage(icon, icon_path);
     
     ObjcId ns_image = objc::msg_send(objc::getClass("NSImage"), GetId, "alloc");
-    ns_image = objc::msg_send(ns_image, SendIdForId, "initByReferencingFile:", to_nsstr(icon_path));
+    ns_image = objc::msg_send(ns_image, GetId_Id, "initByReferencingFile:", to_nsstr(icon_path));
     
     objc::msg_send(ns_image, SendBool, "setTemplate:", true);
     

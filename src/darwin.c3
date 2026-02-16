@@ -1,13 +1,38 @@
-// CORE FOUNDATION
-module cf;
+/**
+* Objective C bindings
+*/
+module objc @if(env::DARWIN);
+
+import std::os::macos::objc;
+
+extern fn void register_class_pair(ObjcClass cls) @cname("objc_registerClassPair");
+
+alias GetInt        = fn int   (ObjcId, ObjcSelector);
+alias GetId         = fn ObjcId(ObjcId, ObjcSelector);
+alias GetId_Id      = fn ObjcId(ObjcId, ObjcSelector, ObjcId);
+alias SendId        = fn void  (ObjcId, ObjcSelector, ObjcId);
+alias GetId_str     = fn ObjcId(ObjcId, ObjcSelector, ZString);
+alias GetBool_Id    = fn bool  (ObjcId, ObjcSelector, ObjcId);
+alias GetId_double  = fn ObjcId(ObjcId, ObjcSelector, double);
+alias SendBool      = fn void  (ObjcId, ObjcSelector, bool);
+alias GetBool_IdId  = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
+alias SendUsz       = fn void  (ObjcId, ObjcSelector, usz);
+alias GetId_IdSelId = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcSelector, ObjcId);
+
+/**
+* Core Foundation
+*/
+module cf @if(env::DARWIN);
 extern fn void release(void* obj) @cname("CFRelease");
 extern fn void* runLoopGetCurrent() @cname("CFRunLoopGetCurrent");
 extern fn void runLoopAddSource(void* rl, void* source, void* mode) @cname("CFRunLoopAddSource");
 extern fn void* machPortCreateRunLoopSource(void* allocator, void* tap, int order) @cname("CFMachPortCreateRunLoopSource");
 extern const void* RUN_LOOP_COMMON_MODES @cname("kCFRunLoopCommonModes");
 
-// CORE GRAPHICS
-module cg;
+/**
+* Core Graphics
+*/
+module cg @if(env::DARWIN);
 import std::io;
 import raylib5;
 import std::os::macos::objc;
@@ -47,8 +72,10 @@ extern fn void contextSetRGBFillColor(void* c, double red, double green, double 
 extern fn void contextSetTextMatrix(void* c, double[6] matrix) @cname("CGContextSetTextMatrix");
 extern fn void contextFillRect(void* c, Rect rect) @cname("CGContextFillRect");
 
-// CORE TEXT
-module ct;
+/**
+* Core Text
+*/
+module ct @if(env::DARWIN);
 
 extern fn void* fontCreateWithName(void* name, double size, void* matrix) @cname("CTFontCreateWithName");
 extern fn void* lineCreateWithAttributedString(void* attrString) @cname("CTLineCreateWithAttributedString");
