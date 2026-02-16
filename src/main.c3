@@ -65,7 +65,7 @@ struct Clipboard {
 
 struct Entry {
     String text;
-    Time timestamp;
+    DateTime timestamp;
 }
 
 // Grant your terminal and/or binary Accessibility Permissions in 
@@ -276,7 +276,7 @@ fn void Manager.menu_mode(&self) {
 fn void Manager.add(&self, String text) {
     Entry entry = {
         .text = text.copy(mem),
-        .timestamp = time::now(),
+        .timestamp = datetime::now(),
     };
 
     self.history.push(entry);
@@ -297,7 +297,7 @@ fn bool Manager.update(&self) {
 
     if (self.history.len() > self.history_limit) {
         if (try old = self.history.pop_first()) {
-            io::printfn("removed clipboard history from: %s ago", time::now().diff_us(old.timestamp).to_nano());
+            io::printfn("removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
             old.text.free(mem);
         }
     }
@@ -372,6 +372,14 @@ fn void Manager.show_clips(&self) {
             badge_y + (badge_h - count_size.y) / 2f,
         };
         rl::drawTextEx(self.font, count_str, count_pos, 14, 0, COLOR_BADGE_TEXT);
+
+        // timestamp footer
+        if (is_selected) {
+            ZString timestamp = string::tformat_zstr("%s", entry.timestamp);
+            rl::Vector2 timestamp_size = rl::measureTextEx(self.font, timestamp, 16, 0);
+            float timestamp_x = (SCREEN_WIDTH - timestamp_size.x) - 25;
+            rl::drawTextEx(self.font, timestamp, {timestamp_x, SCREEN_HEIGHT - 30f}, 16, 0f, COLOR_FOOTER);
+        }
 
         visual_idx++;
     }
@@ -470,7 +478,7 @@ fn Entry? Clipboard.current(&self) {
         if (!safe) {
             return {
                 .text = "***",
-                .timestamp = time::now(),
+                .timestamp = datetime::now(),
             };
         }
 
@@ -503,7 +511,7 @@ fn Entry? Clipboard.get_current_clip(&self) {
         ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
         return {
             .text = zstr.copy(mem),
-            .timestamp = time::now(),
+            .timestamp = datetime::now(),
         };
     };
 }
@@ -547,4 +555,10 @@ fn ObjcId generate_tray_icon() {
     
     rl::unloadImage(icon);
     return ns_image;
+}
+
+fn usz? DateTime.to_format(&self, Formatter* formatter) @dynamic 
+{
+    String fmt = "%02d:%02d:%02d";
+    return formatter.printf(fmt, self.hour, self.min, self.sec);
 }
