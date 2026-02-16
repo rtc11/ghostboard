@@ -510,14 +510,23 @@ fn void Manager.show_clips(&self) {
     rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
     float header_x = (SCREEN_WIDTH - header_size.x) / 2f;
     int header_padding = 10;
+    int extra_body_space = 80;
     rl::Rectangle header_rec = { 
-        header_x - header_padding, 
+        header_x - header_padding - extra_body_space / 2f, 
         10 - header_padding / 2f, 
-        header_size.x + header_padding * 2f, 
+        header_size.x + header_padding * 2f + extra_body_space, 
         header_size.y + header_padding 
     };
     rl::drawRectangleRounded(header_rec, 0.5, 12, COLOR_BODY);
     rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, COLOR_TITLE);
+    
+    // version number
+    ZString version_txt = "v0.1.0".zstr_tcopy();
+    float version_font_size = 14f;
+    rl::Vector2 version_size = rl::measureTextEx(self.font, version_txt, version_font_size, 0f);
+    float version_x = header_x + header_size.x + 8f;
+    float version_y = 10f + (header_size.y - version_size.y) / 2f;
+    rl::drawTextEx(self.font, version_txt, {version_x, version_y}, version_font_size, 0f, COLOR_FOOTER);
 
     int spacing = 30;
     int rec_padding = 20;
