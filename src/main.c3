@@ -168,6 +168,8 @@ fn void Manager.show_window(&self) {
     objc::msg_send(shared_app, SendBool, "activateIgnoringOtherApps:", true);
 
     self.center_window();
+    self.selected_idx = 0;
+    self.show_all_text = false;
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
