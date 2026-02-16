@@ -3,6 +3,7 @@ import std::time;
 import std::thread;
 import std::collections::list;
 import std::os::macos::objc;
+import std::os::env;
 import cg, cf, ct;
 import raylib5;
 
@@ -43,6 +44,9 @@ const rl::Color COLOR_FOOTER     = COLOR_GOLD;
 const rl::Color COLOR_BADGE_LINE = COLOR_GOLD;
 const rl::Color COLOR_BADGE_TEXT = COLOR_GREEN;
 
+const String STORAGE_DIR = ".config/ghostboard";
+const String STORAGE_FILE = "clips";
+
 faultdef EMPTY, REDACTED;
 
 struct Manager {
@@ -65,7 +69,7 @@ struct Clipboard {
 
 struct Entry {
     String text;
-    DateTime timestamp;
+    TzDateTime timestamp;
 }
 
 // Grant your terminal and/or binary Accessibility Permissions in 
@@ -148,6 +152,7 @@ fn Manager init(usz limit = 10) {
         .history_limit = limit,
         .font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0),
     };
+    manager.load_from_file();
     manager.update();
     rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
     return manager;
@@ -278,10 +283,11 @@ fn void Manager.menu_mode(&self) {
 fn void Manager.add(&self, String text) {
     Entry entry = {
         .text = text.copy(mem),
-        .timestamp = datetime::now(),
+        .timestamp = datetime::now().to_local(),
     };
 
     self.history.push(entry);
+    self.save_to_file();
 }
 
 fn bool Manager.update(&self) {
@@ -301,9 +307,74 @@ fn bool Manager.update(&self) {
         if (try old = self.history.pop_first()) {
             io::printfn("removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
             old.text.free(mem);
+            self.save_to_file();
         }
     }
     return true;
+}
+
+fn String Manager.get_storage_path(&self) {
+    String? home = env::tget_var("HOME");
+    if (catch home) return STORAGE_FILE;
+    String dir_path = string::tformat("%s/%s", home, STORAGE_DIR);
+    io::path::mkdir(dir_path, true)!!;
+    return string::tformat("%s/%s", dir_path, STORAGE_FILE);
+}
+
+fn void Manager.save_to_file(&self) {
+    String path = self.get_storage_path();
+    File? file = file::open(path, "wb");
+    if (catch file) {
+        io::printfn("failed to open file for writing: %s", path);
+        return;
+    }
+    defer (void)file.close();
+    
+    foreach (entry: self.history) {
+        Time timestamp = entry.timestamp.time;
+        io::write_any(&file, &timestamp)!!;
+        int gmt_offset = entry.timestamp.gmt_offset;
+        io::write_any(&file, &gmt_offset)!!;
+        usz text_len = entry.text.len;
+        io::write_any(&file, &text_len)!!;
+        io::write_all(&file, entry.text)!!;
+    }
+}
+
+fn void Manager.load_from_file(&self) {
+    String path = self.get_storage_path();
+    File? file = file::open(path, "rb");
+    if (catch file) {
+        io::printfn("no existing clipboard history found");
+        return;
+    }
+    defer (void)file.close();
+    
+    while (!file.eof()) {
+        long timestamp;
+        if (catch io::read_any(&file, &timestamp)) break;
+        
+        int gmt_offset;
+        if (catch io::read_any(&file, &gmt_offset)) break;
+        
+        usz text_len;
+        if (catch io::read_any(&file, &text_len)) break;
+        
+        char[] buffer = mem::alloc_array(char, text_len);
+        if (catch io::read_all(&file, buffer)) {
+            mem::free(buffer);
+            break;
+        }
+        
+        Entry entry = {
+            .text = ((String)buffer).copy(mem),
+            .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
+        };
+        self.history.push(entry);
+        mem::free(buffer);
+    }
+    
+    io::printfn("loaded %d clips from storage", self.history.len());
 }
 
 fn void draw_rounded_corners(rl::Rectangle rec, rl::Color color) {
@@ -496,7 +567,7 @@ fn Entry? Clipboard.get_current_clip(&self) {
         ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
         return {
             .text = zstr.copy(mem),
-            .timestamp = datetime::now(),
+            .timestamp = datetime::now().to_local(),
         };
     };
 }
