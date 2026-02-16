@@ -1,10 +1,11 @@
-import std::io;
-import std::time;
-import std::thread;
 import std::collections::list;
-import std::os::macos::objc, objc;
-import std::os::env;
 import std::core::log, logger;
+import std::io;
+import std::os::env;
+import std::os::macos::objc, objc;
+import std::sort;
+import std::thread;
+import std::time;
 import cg, cf, ct;
 import config;
 import raylib5;
@@ -57,6 +58,8 @@ struct Entry {
     TzDateTime timestamp;
     usz hits;
 }
+
+fn bool Entry.less(&self, Entry other) => self.hits < other.hits;
 
 fn void main(String[] args)
 {
@@ -230,6 +233,9 @@ fn void Manager.show_window(&self) {
     self.center_window();
     self.selected_idx = 0;
     self.show_all_text = false;
+    // Sort by hits (descending - highest first)
+    quicksort(&self.history);
+    self.history.reverse();
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
@@ -249,6 +255,7 @@ fn void Manager.loop(&self) {
         if (current_count != last_count) {
             log::info("new clip detected");
             last_count = current_count;
+            thread::sleep(time::ms(50)); // race condition, wait for macos to save its clip first
             self.update();
         }
  
@@ -298,8 +305,8 @@ fn void Manager.menu_mode(&self) {
             rl::setWindowState(WINDOW_HIDDEN);
             move_app_to_background();
         }
-        usz reversed_idx = self.history.len() - 1 - self.selected_idx;
-        Entry? selected = self.history.get(reversed_idx);
+        // Get the selected entry (now using direct index since history is sorted)
+        Entry? selected = self.history.get(self.selected_idx);
         if (try selected) {
             self.cp.set(selected.text);
         } else if (@catch(selected) == REDACTED) {
@@ -355,10 +362,9 @@ fn void Manager.add(&self, String text) {
 fn void Manager.remove_selected(&self) {
     if (self.history.len() == 0) return;
     
-    usz reversed_idx = self.history.len() - 1 - self.selected_idx;
-    Entry? entry = self.history.get(reversed_idx);
+    Entry? entry = self.history.get(self.selected_idx);
     if (catch entry) return;
-    self.history.remove_at(reversed_idx);
+    self.history.remove_at(self.selected_idx);
     
     entry.text.free(mem);
     
@@ -369,7 +375,7 @@ fn void Manager.remove_selected(&self) {
     }
     
     self.save_to_file();
-    log::info("removed clip at index %d", reversed_idx);
+    log::info("removed clip at index %d", self.selected_idx);
 }
 
 fn bool Manager.update(&self) {
@@ -540,9 +546,9 @@ fn void Manager.show_clips(&self) {
     float badge_y_offset = (rec_height - (float)badge_h) / 2f;
     int badge_padding = rec_padding - 5;
 
-    // the index is still the same even if we reverse the iter.
+    // Display clips directly (history is already sorted)
     int visual_idx; 
-    foreach_r (entry: self.history) {
+    foreach (entry : self.history) {
         int y_pos = 50 + (visual_idx * spacing);
         bool is_selected = visual_idx == self.selected_idx;
 
@@ -599,8 +605,7 @@ fn void Manager.show_all_text_view(&self) {
     rl::beginDrawing();
     rl::clearBackground(COLOR_BG);
 
-    usz reversed_idx = self.history.len() - 1 - self.selected_idx;
-    Entry? selected = self.history.get(reversed_idx);
+    Entry? selected = self.history.get(self.selected_idx);
 
     if (try selected) {
         // header
@@ -691,8 +696,23 @@ fn void Manager.simulate_paste(&self) {
 fn bool? Clipboard.is_safe(&self) {
     @pool() {
         ObjcId items_array = objc::msg_send(self.instance, SendVoid, "pasteboardItems");
+        log::debug("pasteboardItems returned: %p", items_array);
+        
+        if (items_array == null) {
+            log::debug("pasteboardItems is null");
+            return EMPTY?;
+        }
+        
+        int count = (int)objc::msg_send(items_array, GetInt, "count");
+        log::debug("pasteboardItems count: %d", count);
+        
         ObjcId item = objc::msg_send(items_array, SendVoid, "firstObject");
-        if (item == null) return EMPTY?;
+        log::debug("firstObject returned: %p", item);
+        
+        if (item == null) {
+            log::debug("firstObject is null, clipboard appears empty");
+            return EMPTY?;
+        }
 
         ObjcId types_array = objc::msg_send(item, SendVoid, "types");
 
