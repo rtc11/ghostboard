@@ -266,6 +266,12 @@ fn void Manager.menu_mode(&self) {
         }
     }
 
+    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE)) {
+        if (!self.show_all_text && self.history.len() > 0) {
+            self.remove_selected();
+        }
+    }
+
     if (self.show_all_text) {
         float scroll_speed = 20f;
         float hjkl_speed = 15;
@@ -288,6 +294,26 @@ fn void Manager.add(&self, String text) {
 
     self.history.push(entry);
     self.save_to_file();
+}
+
+fn void Manager.remove_selected(&self) {
+    if (self.history.len() == 0) return;
+    
+    usz reversed_idx = self.history.len() - 1 - self.selected_idx;
+    Entry? entry = self.history.get(reversed_idx);
+    if (catch entry) return;
+    self.history.remove_at(reversed_idx);
+    
+    entry.text.free(mem);
+    
+    if (self.history.len() == 0) {
+        self.selected_idx = 0;
+    } else if (self.selected_idx >= self.history.len()) {
+        self.selected_idx = (int)self.history.len() - 1;
+    }
+    
+    self.save_to_file();
+    io::printfn("removed clip at index %d", reversed_idx);
 }
 
 fn bool Manager.update(&self) {
@@ -458,7 +484,7 @@ fn void Manager.show_clips(&self) {
     }
 
     // footer
-    ZString footer = string::tformat_zstr("o: inspect clip       enter: select clip       q: quit       hjkl: navigate");
+    ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
     rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 19, 0f, COLOR_FOOTER);
     rl::endDrawing();
 }
@@ -519,7 +545,7 @@ fn void Manager.show_all_text_view(&self) {
         rl::endScissorMode();
 
         // footer
-        ZString footer = string::tformat_zstr("o: inspect clip       enter: select clip       q: quit       hjkl: navigate");
+        ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
         rl::drawTextEx(self.font, footer, {25, SCREEN_HEIGHT - 30f}, 19, 0f, COLOR_FOOTER);
     }
     rl::endDrawing();
