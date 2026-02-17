@@ -6,6 +6,12 @@ import std::core::log;
 import std::time;
 import config;
 
+fn usz? DateTime.to_format(&self, Formatter* formatter) @dynamic 
+{
+    String fmt = "%02d:%02d:%02d";
+    return formatter.printf(fmt, self.hour, self.min, self.sec);
+}
+
 struct StdoutLogger (Logger) {
 	void* dummy;
 }

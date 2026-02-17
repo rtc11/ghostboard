@@ -19,6 +19,11 @@ alias GetBool_IdId  = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
 alias SendUsz       = fn void  (ObjcId, ObjcSelector, usz);
 alias GetId_IdSelId = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcSelector, ObjcId);
 
+fn ObjcId nsstr(ZString str) {
+    ObjcClass str_cls = objc::getClass("NSString");
+    return objc::msg_send(str_cls, GetId_str, "stringWithUTF8String:", str);
+}
+
 /**
 * Core Foundation
 */
