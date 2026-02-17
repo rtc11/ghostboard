@@ -41,11 +41,21 @@ struct Manager {
     usz history_limit;
     Config config;
     int selected_idx;
-    bool menu;
-    bool show_all_text;
+    // bool menu;
+    // bool show_all_text;
+    Mode mode;
     rl::Vector2 scroll_pos;
     Font font;
     int key_repeat_counter;
+    // bool search_mode;
+    DString search_query;
+}
+
+enum Mode {
+    HIDE,
+    LIST,
+    INSPECT,
+    SEARCH,
 }
 
 struct Clipboard {
@@ -154,9 +164,8 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     bool shift = (flags & 0x20000) != 0;
     if (control && shift && keycode == 0x09) {
         Manager* manager = (Manager*)refcon;
-        if (!manager.menu) {
+        if (manager.mode == HIDE) {
             log::info("global hotkey detected! enabling menu");
-            manager.menu = true;
             manager.show_window();
         }
         return null;
@@ -212,7 +221,9 @@ fn Manager init(usz limit = 10, Config config) {
         .history_limit = limit,
         .config = config,
         .font = font,
+        .mode = HIDE,
     };
+    manager.search_query.tinit(128);
     manager.load_from_file();
     manager.update();
     rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
@@ -237,10 +248,9 @@ fn void Manager.show_window(&self) {
     app_to_foreground();
     self.center_window();
     self.selected_idx = 0;
-    self.show_all_text = false;
-    self.scroll_pos = {0, 0};  // Reset scroll position
+    self.mode = LIST;
+    self.scroll_pos = {0, 0};
     quicksort(&self.history);
-    // self.history.reverse();
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
@@ -250,8 +260,8 @@ fn void Manager.loop(&self) {
     int last_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
 
     while (!rl::windowShouldClose() && !should_quit) {
-        if (self.menu && !rl::isWindowFocused()) {
-            self.menu = false;
+        if (self.mode == LIST && !rl::isWindowFocused()) {
+            self.mode = HIDE;
             rl::setWindowState(WINDOW_HIDDEN);
             move_app_to_background();
         }
@@ -264,21 +274,22 @@ fn void Manager.loop(&self) {
             self.update();
         }
  
-        if (self.menu) {
-            if (self.show_all_text) {
+        switch (self.mode) {
+            case INSPECT:
                 self.show_all_text_view();
-            } else {
+                self.menu_mode();
+            case LIST:
+            case SEARCH:
                 self.show_clips();
-            }
-            self.menu_mode();
-        } else {
-            rl::pollInputEvents();
-            rl::beginDrawing();
-            rl::clearBackground(COLOR_BG);
-            rl::endDrawing();
+                self.menu_mode();
+            case HIDE:
+                rl::pollInputEvents();
+                rl::beginDrawing();
+                rl::clearBackground(COLOR_BG);
+                rl::endDrawing();
         }
 
-        thread::sleep(time::ms(8)); // ~120
+        thread::sleep(time::ms(8));
     }
     rl::closeWindow();
 }
@@ -287,9 +298,9 @@ fn void Manager.menu_mode(&self) {
     const int MAX_VISIBLE_ITEMS = 17;
     const int ITEM_SPACING = 30;
     const int KEY_REPEAT_INITIAL_DELAY = 20;  // Wait 20 frames (~167ms) before starting repeat
-    const int KEY_REPEAT_DELAY = 3;  // Then move every 3 frames (~25ms)
+    const int KEY_REPEAT_DELAY = 3;           // Then move every 3 frames (~25ms)
     
-    if (!self.show_all_text) {
+    if (self.mode == LIST) {
         bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
         bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
         
@@ -350,51 +361,71 @@ fn void Manager.menu_mode(&self) {
     }
 
     if (rl::isKeyPressed(rl::KEY_ESCAPE) || rl::isKeyPressed(rl::KEY_Q)) {
-        if (self.show_all_text) {
-            self.show_all_text = false;
-        } else {
-            self.menu = false;
-            rl::setWindowState(WINDOW_HIDDEN);
-            move_app_to_background();
+        switch (self.mode) {
+            case SEARCH:
+                self.mode = LIST;
+                self.search_query.clear();
+                self.selected_idx = 0;
+            case INSPECT:
+                self.mode = LIST;
+            default:
+                self.mode = HIDE;
+                rl::setWindowState(WINDOW_HIDDEN);
+                move_app_to_background();
+        }
+    }
+    
+    // Handle text input and mode switching - process all characters
+    int key = rl::getCharPressed();
+    while (key > 0) {
+        if (key == '/' && self.mode == LIST) {
+            log::info("search mode activated");
+            self.mode = SEARCH;
+            self.search_query.clear();
+            self.selected_idx = 0;
+        } else if (self.mode == SEARCH && key >= 32 && key < 127 && key != '/') {
+            self.search_query.append_char((char)key);
+            self.selected_idx = 0;
+        }
+        key = rl::getCharPressed();
+    }
+    
+    // Handle backspace in search mode
+    if (self.mode == SEARCH) {
+        if (rl::isKeyPressed(rl::KEY_BACKSPACE) && self.search_query.len() > 0) {
+            self.search_query.delete(self.search_query.len() - 1, 1);
+            self.selected_idx = 0;
         }
     }
 
     if (rl::isKeyPressed(rl::KEY_ENTER)) {
-        if (self.history.len() == 0) {
-            self.menu = false;
-            rl::setWindowState(WINDOW_HIDDEN);
-            move_app_to_background();
-        }
-        // Get the selected entry (now using direct index since history is sorted)
         Entry? selected = self.history.get(self.selected_idx);
         if (try selected) {
             self.cp.set(selected.text);
         } else if (@catch(selected) == REDACTED) {
             self.cp.set("***");
         } 
-        self.menu = false;
+        self.mode = HIDE;
         rl::setWindowState(WINDOW_HIDDEN);
         move_app_to_background();
-
-        // wait for the os to complete the transition
-        thread::sleep(time::ms(50));
+        thread::sleep(time::ms(50)); // wait for the os to complete the transition
         self.simulate_paste();
     }
 
-    if (rl::isKeyPressed(rl::KEY_O)) {
-        if (self.history.len() > 0) {
-            self.show_all_text = !self.show_all_text;
-            self.scroll_pos = {0, 0};
+    if (rl::isKeyPressed(rl::KEY_O) && self.history.len() > 0) {
+        switch (self.mode) {
+            case LIST: self.mode = INSPECT;
+            case INSPECT: self.mode = LIST;
+            default: break;
         }
+        self.scroll_pos = {0, 0};
     }
 
-    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE)) {
-        if (!self.show_all_text && self.history.len() > 0) {
-            self.remove_selected();
-        }
+    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE) && self.mode == LIST && self.history.len() > 0) {
+        self.remove_selected();
     }
 
-    if (self.show_all_text) {
+    if (self.mode == INSPECT) {
         float scroll_speed = 20f;
         float hjkl_speed = 15;
         if (rl::isKeyDown(rl::KEY_LEFT)  || rl::isKeyDown(rl::KEY_H)) self.scroll_pos.x -= hjkl_speed;
@@ -590,6 +621,17 @@ fn void Manager.show_clips(&self) {
     float version_x = header_x + header_size.x + 8f;
     float version_y = 10f + (header_size.y - version_size.y) / 2f;
     rl::drawTextEx(self.font, version_txt, {version_x, version_y}, version_font_size, 0f, COLOR_FOOTER);
+    
+    // Search bar (if in search mode)
+    int search_bar_height = 0;
+    if (self.mode == SEARCH) {
+        search_bar_height = 30;
+        String search_text = self.search_query.len() > 0 ? self.search_query.str_view() : "Type to search...";
+        ZString search_display = string::tformat_zstr("/ %s", search_text);
+        rl::Vector2 search_pos = {25, 43};
+        rl::Color search_color = self.search_query.len() > 0 ? COLOR_TITLE : COLOR_FOOTER;
+        rl::drawTextEx(self.font, search_display, search_pos, 18, 0f, search_color);
+    }
 
     int spacing = 30;
     int rec_padding = 20;
@@ -606,10 +648,19 @@ fn void Manager.show_clips(&self) {
     float badge_y_offset = (rec_height - (float)badge_h) / 2f;
     int badge_padding = rec_padding - 5;
 
-    // Display clips directly (history is already sorted)
+    // Filter by search query if active
     int visual_idx; 
     foreach (entry : self.history) {
-        float y_pos = 50 + ((float)visual_idx * spacing) - self.scroll_pos.y;
+        // Filter by search query
+        if (self.mode == SEARCH && self.search_query.len() > 0) {
+            String query_lower = self.search_query.str_view().to_lower_tcopy();
+            String text_lower = entry.text.to_lower_tcopy();
+            if (!text_lower.contains(query_lower)) {
+                continue;  // Skip entries that don't match
+            }
+        }
+        
+        float y_pos = 50 + (float)search_bar_height + ((float)visual_idx * spacing) - self.scroll_pos.y;
         
         // Skip rendering items outside visible area (footer starts at ~570)
         if (y_pos < 45 || y_pos + rec_height > SCREEN_HEIGHT - 40) {
