@@ -17,7 +17,7 @@ Inspect clip:
 [ ] clipboard categories/tags - auto-detect urls, code snippets, images, etc and show icons/badges
 [ ] rich text/image preview - show formatted text or thumbnails
 [x] duplicate detection - merge identical entries
-[ ] export/import history
+[x] export/import history
 [ ] configurable hotkey - let use change ctrl-shift-v in settings
 [ ] dark/light theme toggle
 [ ] clipboard templates - save frequently used text snippets
