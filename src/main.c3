@@ -24,7 +24,7 @@ fn void main(String[] args)
     setup_tray(&manager);
 
     setup_event_tap(&manager);
-    manager.loop();
+    manager.run();
 }
 
 fn void hide_from_dock() {

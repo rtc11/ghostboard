@@ -68,3 +68,34 @@ fn void UIState.show_window(&self) {
     rl::restoreWindow();
 }
 
+fn Font load_font() {
+    ObjcId bundle = objc::msg_send(objc::getClass("NSBundle"), SendVoid, "mainBundle");
+    ObjcId resource_path = objc::msg_send(bundle, SendVoid, "resourcePath");
+    ZString bundle_resources = null;
+    if (resource_path != null) {
+        bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
+    }
+
+    Font font;
+    if (bundle_resources != null) {
+        String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
+        log::debug("trying to load font from bundle: %s", font_path);
+        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, null, 0);
+    } else {
+        font.texture.id = 0;
+    }
+    
+    if (font.texture.id == 0) {
+        log::debug("failed to load font from bundle, trying resources/SF-Pro.ttf");
+        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0);
+        if (font.texture.id == 0) {
+            log::warn("failed to load font from resources/SF-Pro.ttf");
+        } else {
+            log::info("loaded font from resources/SF-Pro.ttf");
+        }
+    } else {
+        log::info("loaded font from bundle");
+    }
+    return font;
+}
+

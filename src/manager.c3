@@ -29,159 +29,189 @@ fn Manager init(Config config) {
         .first_obj_sel = objc::sel_registerName("firstObject"),
         .types_sel = objc::sel_registerName("types"),
     };
-    
     Manager manager = {
         .cp = cp,
         .history_limit = config.history_limit,
         .config = config,
-        .font = load_font(),
+        .font = ui::load_font(),
     };
-
     storage::load_from_file(&manager.config, &manager.history);
-
     manager.update();
-
     rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
-
     return manager;
 }
 
-fn Font load_font() {
-    ObjcId bundle = objc::msg_send(objc::getClass("NSBundle"), SendVoid, "mainBundle");
-    ObjcId resource_path = objc::msg_send(bundle, SendVoid, "resourcePath");
-    ZString bundle_resources = null;
-    if (resource_path != null) {
-        bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
-    }
-
-    Font font;
-    if (bundle_resources != null) {
-        String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
-        log::debug("trying to load font from bundle: %s", font_path);
-        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, null, 0);
-    } else {
-        font.texture.id = 0;
-    }
+fn void Manager.run(&self) {
+    int last_clipboard_count = self.get_clipboard_count();
     
-    if (font.texture.id == 0) {
-        log::debug("failed to load font from bundle, trying resources/SF-Pro.ttf");
-        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0);
-        if (font.texture.id == 0) {
-            log::warn("failed to load font from resources/SF-Pro.ttf");
-        } else {
-            log::info("loaded font from resources/SF-Pro.ttf");
-        }
-    } else {
-        log::info("loaded font from bundle");
-    }
-    return font;
-}
-
-fn void Manager.loop(&self) {
-    int last_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
-
     while (!rl::windowShouldClose() && self.ui.mode != QUIT) {
-        if (self.ui.mode == LIST && !rl::isWindowFocused()) {
-            self.ui.mode = HIDE;
-            rl::setWindowState(WINDOW_HIDDEN);
-            ui::move_app_to_background();
-        }
-
-        int current_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
-        if (current_count != last_count) {
-            log::info("new clip detected");
-            last_count = current_count;
-            thread::sleep(time::ms(50)); // race condition, wait for macos to save its clip first
-            self.update();
-        }
- 
-        switch (self.ui.mode) {
-            case INSPECT:
-                self.render_inspect();
-                self.menu_mode();
-            case LIST:
-            case SEARCH:
-                self.render_clips();
-                self.menu_mode();
-            case HIDE:
-                rl::pollInputEvents();
-                rl::beginDrawing();
-                rl::clearBackground(ui::COLOR_BG);
-                rl::endDrawing();
-            case QUIT:
-        }
-
-        thread::sleep(time::ms(8));
+        self.process_events(&last_clipboard_count);
+        self.update_state();
+        self.render();
+        thread::sleep(time::ms(8)); // ~120fps
     }
     rl::closeWindow();
 }
 
-fn void Manager.menu_mode(&self) {
+fn void Manager.process_events(&self, int* last_clipboard_count) {
+    self.handle_window_focus();
+    self.check_clipboard_changes(last_clipboard_count);
+    self.handle_input();
+}
+
+fn void Manager.update_state(&self) {
+    // - Animation updates
+    // - Timed state changes
+    // - Background tasks
+}
+
+fn void Manager.render(&self) {
+    switch (self.ui.mode) {
+        case INSPECT: self.render_inspect();
+        case LIST   : self.render_clips();
+        case SEARCH : self.render_clips();
+        case HIDE   : self.render_hidden();
+        case QUIT   :
+    }
+}
+
+fn void Manager.handle_window_focus(&self) {
+    if (self.ui.mode == LIST && !rl::isWindowFocused()) {
+        self.ui.mode = HIDE;
+        rl::setWindowState(WINDOW_HIDDEN);
+        ui::move_app_to_background();
+    }
+}
+
+fn void Manager.check_clipboard_changes(&self, int* last_count) {
+    int current = self.get_clipboard_count();
+    if (current != *last_count) {
+        log::info("new clip detected");
+        *last_count = current;
+        thread::sleep(time::ms(50)); // race condition workaround
+        self.update();
+    }
+}
+
+fn int Manager.get_clipboard_count(&self) {
+    return (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
+}
+
+fn void Manager.render_hidden(&self) {
+    rl::pollInputEvents();
+    rl::beginDrawing();
+    rl::clearBackground(ui::COLOR_BG);
+    rl::endDrawing();
+}
+
+fn void Manager.handle_input(&self) {
+    switch (self.ui.mode) {
+        case LIST: self.handle_list_input();
+        case SEARCH: self.handle_search_input();
+        case INSPECT: self.handle_inspect_input();
+        case HIDE:
+        case QUIT:
+    }
+    self.handle_mode_switching();
+}
+
+fn void Manager.handle_navigation(&self) {
     const int MAX_VISIBLE_ITEMS = 17;
     const int ITEM_SPACING = 30;
-    const int KEY_REPEAT_INITIAL_DELAY = 20;  // Wait 20 frames (~167ms) before starting repeat
-    const int KEY_REPEAT_DELAY = 3;           // Then move every 3 frames (~25ms)
+    const int KEY_REPEAT_INITIAL_DELAY = 20;
+    const int KEY_REPEAT_DELAY = 3;
     
-    if (self.ui.mode == LIST) {
-        bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
-        bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
-        
-        // Reset counter if no key is pressed
-        if (!key_down && !key_up) {
-            self.ui.key_repeat_counter = 0;
-        }
-        
-        if (key_down) {
-            // Allow movement on first press or after initial delay
-            bool first_press = rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J);
-            bool should_repeat = self.ui.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
-                                 (self.ui.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
-            
-            if (first_press || should_repeat) {
-                if (self.ui.selected_idx < (int)self.history.len() - 1) {
-                    self.ui.selected_idx++;
-                    
-                    // Auto-scroll when selection moves below visible area
-                    int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-                    if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS) {
-                        self.ui.scroll_pos.y += ITEM_SPACING;
-                    }
+    bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
+    bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
+    
+    if (!key_down && !key_up) {
+        self.ui.key_repeat_counter = 0;
+        return;
+    }
+    
+    if (key_down) {
+        bool first_press = rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J);
+        bool should_repeat = self.ui.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
+                             (self.ui.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
+        if (first_press || should_repeat) {
+            if (self.ui.selected_idx < (int)self.history.len() - 1) {
+                self.ui.selected_idx++;
+                
+                int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+                if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS) {
+                    self.ui.scroll_pos.y += ITEM_SPACING;
                 }
             }
-            self.ui.key_repeat_counter++;
         }
-
-        if (key_up) {
-            // Allow movement on first press or after initial delay
-            bool first_press = rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K);
-            bool should_repeat = self.ui.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
-                                 (self.ui.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
-            
-            if (first_press || should_repeat) {
-                if (self.ui.selected_idx > 0) {
-                    self.ui.selected_idx--;
-                    
-                    // Auto-scroll when selection moves above visible area
-                    int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-                    if (self.ui.selected_idx < scroll_offset) {
-                        self.ui.scroll_pos.y -= ITEM_SPACING;
-                    }
-                }
-            }
-            self.ui.key_repeat_counter++;
-        }
-        
-        // Mouse wheel scrolling
-        float wheel = rl::getMouseWheelMove();
-        if (wheel != 0) {
-            self.ui.scroll_pos.y -= wheel * 30.0f;
-            // Clamp scroll position
-            if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
-            int max_scroll = math::max(0, ((int)self.history.len() - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
-            if (self.ui.scroll_pos.y > max_scroll) self.ui.scroll_pos.y = (float)max_scroll;
-        }
+        self.ui.key_repeat_counter++;
     }
 
+    if (key_up) {
+        bool first_press = rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K);
+        bool should_repeat = self.ui.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
+                             (self.ui.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
+        if (first_press || should_repeat) {
+            if (self.ui.selected_idx > 0) {
+                self.ui.selected_idx--;
+                
+                int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+                if (self.ui.selected_idx < scroll_offset) {
+                    self.ui.scroll_pos.y -= ITEM_SPACING;
+                }
+            }
+        }
+        self.ui.key_repeat_counter++;
+    }
+    
+    // Mouse wheel scrolling
+    float wheel = rl::getMouseWheelMove();
+    if (wheel != 0) {
+        self.ui.scroll_pos.y -= wheel * 30.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+        int max_scroll = math::max(0, ((int)self.history.len() - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
+        if (self.ui.scroll_pos.y > max_scroll) self.ui.scroll_pos.y = (float)max_scroll;
+    }
+}
+
+fn void Manager.handle_selection(&self) {
+    if (rl::isKeyPressed(rl::KEY_ENTER)) {
+        StoredEntry? selected = self.history.get(self.ui.selected_idx);
+        if (try selected) {
+            self.cp.set(selected.text);
+        } else if (@catch(selected) == REDACTED) {
+            self.cp.set("***");
+        }
+        self.ui.mode = HIDE;
+        rl::setWindowState(WINDOW_HIDDEN);
+        ui::move_app_to_background();
+        thread::sleep(time::ms(50));
+        self.simulate_paste();
+    }
+    
+    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE)) {
+        if (self.history.len() > 0) {
+            self.remove_selected();
+        }
+    }
+}
+
+fn void Manager.handle_text_input(&self) {
+    int key = rl::getCharPressed();
+    while (key > 0) {
+        if (key >= 32 && key < 127 && key != '/') {
+            self.ui.search_query.append_char((char)key);
+            self.ui.selected_idx = 0;
+        }
+        key = rl::getCharPressed();
+    }
+    
+    if (rl::isKeyPressed(rl::KEY_BACKSPACE) && self.ui.search_query.len() > 0) {
+        self.ui.search_query.delete(self.ui.search_query.len() - 1, 1);
+        self.ui.selected_idx = 0;
+    }
+}
+
+fn void Manager.handle_mode_switching(&self) {
     if (rl::isKeyPressed(rl::KEY_ESCAPE) || rl::isKeyPressed(rl::KEY_Q)) {
         switch (self.ui.mode) {
             case SEARCH:
@@ -195,9 +225,10 @@ fn void Manager.menu_mode(&self) {
                 rl::setWindowState(WINDOW_HIDDEN);
                 ui::move_app_to_background();
         }
+        return;
     }
     
-    // Handle text input and mode switching - process all characters
+    // / to enter search mode
     int key = rl::getCharPressed();
     while (key > 0) {
         if (key == '/' && self.ui.mode == LIST) {
@@ -205,59 +236,58 @@ fn void Manager.menu_mode(&self) {
             self.ui.mode = SEARCH;
             self.ui.search_query.clear();
             self.ui.selected_idx = 0;
-        } else if (self.ui.mode == SEARCH && key >= 32 && key < 127 && key != '/') {
-            self.ui.search_query.append_char((char)key);
-            self.ui.selected_idx = 0;
         }
         key = rl::getCharPressed();
     }
     
-    // Handle backspace in search mode
-    if (self.ui.mode == SEARCH) {
-        if (rl::isKeyPressed(rl::KEY_BACKSPACE) && self.ui.search_query.len() > 0) {
-            self.ui.search_query.delete(self.ui.search_query.len() - 1, 1);
-            self.ui.selected_idx = 0;
-        }
-    }
-
-    if (rl::isKeyPressed(rl::KEY_ENTER)) {
-        StoredEntry? selected = self.history.get(self.ui.selected_idx);
-        if (try selected) {
-            self.cp.set(selected.text);
-        } else if (@catch(selected) == REDACTED) {
-            self.cp.set("***");
-        } 
-        self.ui.mode = HIDE;
-        rl::setWindowState(WINDOW_HIDDEN);
-        ui::move_app_to_background();
-        thread::sleep(time::ms(50)); // wait for the os to complete the transition
-        self.simulate_paste();
-    }
-
+    // O to toggle inspect mode
     if (rl::isKeyPressed(rl::KEY_O) && self.history.len() > 0) {
         switch (self.ui.mode) {
-            case LIST: self.ui.mode = INSPECT;
-            case INSPECT: self.ui.mode = LIST;
-            default: break;
+            case LIST:
+                self.ui.mode = INSPECT;
+                self.ui.scroll_pos = {0, 0};
+            case INSPECT:
+                self.ui.mode = LIST;
+            default:
         }
-        self.ui.scroll_pos = {0, 0};
     }
+}
 
-    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE) && self.ui.mode == LIST && self.history.len() > 0) {
-        self.remove_selected();
+fn void Manager.handle_list_input(&self) {
+    self.handle_navigation();
+    self.handle_selection();
+}
+
+fn void Manager.handle_search_input(&self) {
+    self.handle_text_input();
+    self.handle_navigation();
+    self.handle_selection();
+}
+
+fn void Manager.handle_inspect_input(&self) {
+    // Vertical scrolling
+    if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
+        self.ui.scroll_pos.y += 10.0f;
     }
-
-    if (self.ui.mode == INSPECT) {
-        float scroll_speed = 20f;
-        float hjkl_speed = 15;
-        if (rl::isKeyDown(rl::KEY_LEFT)  || rl::isKeyDown(rl::KEY_H)) self.ui.scroll_pos.x -= hjkl_speed;
-        if (rl::isKeyDown(rl::KEY_DOWN)  || rl::isKeyDown(rl::KEY_J)) self.ui.scroll_pos.y += hjkl_speed;
-        if (rl::isKeyDown(rl::KEY_UP)    || rl::isKeyDown(rl::KEY_K)) self.ui.scroll_pos.y -= hjkl_speed;
-        if (rl::isKeyDown(rl::KEY_RIGHT) || rl::isKeyDown(rl::KEY_L)) self.ui.scroll_pos.x += hjkl_speed;
-        float wheel = rl::getMouseWheelMove();
-        if (wheel != 0) self.ui.scroll_pos.y -= wheel * scroll_speed;
+    if (rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K)) {
+        self.ui.scroll_pos.y -= 10.0f;
         if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+    }
+    
+    // Horizontal scrolling
+    if (rl::isKeyDown(rl::KEY_RIGHT) || rl::isKeyDown(rl::KEY_L)) {
+        self.ui.scroll_pos.x += 10.0f;
+    }
+    if (rl::isKeyDown(rl::KEY_LEFT) || rl::isKeyDown(rl::KEY_H)) {
+        self.ui.scroll_pos.x -= 10.0f;
         if (self.ui.scroll_pos.x < 0) self.ui.scroll_pos.x = 0;
+    }
+    
+    // Mouse wheel scrolling
+    float wheel = rl::getMouseWheelMove();
+    if (wheel != 0) {
+        self.ui.scroll_pos.y -= wheel * 30.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
     }
 }
 
@@ -274,19 +304,15 @@ fn void Manager.add(&self, String text) {
 
 fn void Manager.remove_selected(&self) {
     if (self.history.len() == 0) return;
-    
     StoredEntry? entry = self.history.get(self.ui.selected_idx);
     if (catch entry) return;
     self.history.remove_at(self.ui.selected_idx);
-    
     entry.text.free(mem);
-    
     if (self.history.len() == 0) {
         self.ui.selected_idx = 0;
     } else if (self.ui.selected_idx >= self.history.len()) {
         self.ui.selected_idx = (int)self.history.len() - 1;
     }
-    
     storage::save_to_file(&self.config, &self.history);
     log::info("removed clip at index %d", self.ui.selected_idx);
 }
