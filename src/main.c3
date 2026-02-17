@@ -45,6 +45,7 @@ struct Manager {
     bool show_all_text;
     rl::Vector2 scroll_pos;
     Font font;
+    int key_repeat_counter;
 }
 
 struct Clipboard {
@@ -60,7 +61,8 @@ struct Entry {
     usz hits;
 }
 
-fn bool Entry.less(&self, Entry other) => self.hits < other.hits;
+// Sort by hits
+fn bool Entry.less(&self, Entry other) => self.hits > other.hits;
 
 fn void main(String[] args)
 {
@@ -226,18 +228,19 @@ fn void Manager.center_window(&self) {
     rl::setWindowPosition(x, y);
 }
 
-fn void Manager.show_window(&self) {
-    // app to foreground
+fn void app_to_foreground() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
     objc::msg_send(shared_app, SendBool, "activateIgnoringOtherApps:", true);
+}
 
+fn void Manager.show_window(&self) {
+    app_to_foreground();
     self.center_window();
     self.selected_idx = 0;
     self.show_all_text = false;
     self.scroll_pos = {0, 0};  // Reset scroll position
-    // Sort by hits (descending - highest first)
     quicksort(&self.history);
-    self.history.reverse();
+    // self.history.reverse();
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
@@ -283,32 +286,56 @@ fn void Manager.loop(&self) {
 fn void Manager.menu_mode(&self) {
     const int MAX_VISIBLE_ITEMS = 17;
     const int ITEM_SPACING = 30;
+    const int KEY_REPEAT_INITIAL_DELAY = 20;  // Wait 20 frames (~167ms) before starting repeat
+    const int KEY_REPEAT_DELAY = 3;  // Then move every 3 frames (~25ms)
     
     if (!self.show_all_text) {
-        if (rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J)) {
-            // Clamp at bottom instead of wrapping
-            if (self.selected_idx < (int)self.history.len() - 1) {
-                self.selected_idx++;
-                
-                // Auto-scroll when selection moves below visible area
-                int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
-                if (self.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS) {
-                    self.scroll_pos.y += ITEM_SPACING;
+        bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
+        bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
+        
+        // Reset counter if no key is pressed
+        if (!key_down && !key_up) {
+            self.key_repeat_counter = 0;
+        }
+        
+        if (key_down) {
+            // Allow movement on first press or after initial delay
+            bool first_press = rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J);
+            bool should_repeat = self.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
+                                 (self.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
+            
+            if (first_press || should_repeat) {
+                if (self.selected_idx < (int)self.history.len() - 1) {
+                    self.selected_idx++;
+                    
+                    // Auto-scroll when selection moves below visible area
+                    int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
+                    if (self.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS) {
+                        self.scroll_pos.y += ITEM_SPACING;
+                    }
                 }
             }
+            self.key_repeat_counter++;
         }
 
-        if (rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K)) {
-            // Clamp at top instead of wrapping
-            if (self.selected_idx > 0) {
-                self.selected_idx--;
-                
-                // Auto-scroll when selection moves above visible area
-                int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
-                if (self.selected_idx < scroll_offset) {
-                    self.scroll_pos.y -= ITEM_SPACING;
+        if (key_up) {
+            // Allow movement on first press or after initial delay
+            bool first_press = rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K);
+            bool should_repeat = self.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
+                                 (self.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
+            
+            if (first_press || should_repeat) {
+                if (self.selected_idx > 0) {
+                    self.selected_idx--;
+                    
+                    // Auto-scroll when selection moves above visible area
+                    int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
+                    if (self.selected_idx < scroll_offset) {
+                        self.scroll_pos.y -= ITEM_SPACING;
+                    }
                 }
             }
+            self.key_repeat_counter++;
         }
         
         // Mouse wheel scrolling
