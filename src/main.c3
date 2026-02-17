@@ -1,6 +1,7 @@
 import std::collections::list;
 import std::core::log, logger;
 import std::io;
+import std::math;
 import std::os::env;
 import std::os::macos::objc, objc;
 import std::sort;
@@ -76,7 +77,7 @@ fn void main(String[] args)
     rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
     rl::initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "GhostBoard");
 
-    Manager manager = init(limit: 17, config: config);
+    Manager manager = init(limit: 30, config: config);
 
     setup_event_tap(&manager);
     manager.loop();
@@ -233,6 +234,7 @@ fn void Manager.show_window(&self) {
     self.center_window();
     self.selected_idx = 0;
     self.show_all_text = false;
+    self.scroll_pos = {0, 0};  // Reset scroll position
     // Sort by hits (descending - highest first)
     quicksort(&self.history);
     self.history.reverse();
@@ -279,13 +281,44 @@ fn void Manager.loop(&self) {
 }
 
 fn void Manager.menu_mode(&self) {
+    const int MAX_VISIBLE_ITEMS = 17;
+    const int ITEM_SPACING = 30;
+    
     if (!self.show_all_text) {
         if (rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J)) {
-            self.selected_idx = (self.selected_idx + 1) % (int)self.history.len();
+            // Clamp at bottom instead of wrapping
+            if (self.selected_idx < (int)self.history.len() - 1) {
+                self.selected_idx++;
+                
+                // Auto-scroll when selection moves below visible area
+                int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
+                if (self.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS) {
+                    self.scroll_pos.y += ITEM_SPACING;
+                }
+            }
         }
 
         if (rl::isKeyPressed(rl::KEY_UP) || rl::isKeyPressed(rl::KEY_K)) {
-            self.selected_idx = (self.selected_idx - 1 + (int)self.history.len()) % (int)self.history.len();
+            // Clamp at top instead of wrapping
+            if (self.selected_idx > 0) {
+                self.selected_idx--;
+                
+                // Auto-scroll when selection moves above visible area
+                int scroll_offset = (int)(self.scroll_pos.y / ITEM_SPACING);
+                if (self.selected_idx < scroll_offset) {
+                    self.scroll_pos.y -= ITEM_SPACING;
+                }
+            }
+        }
+        
+        // Mouse wheel scrolling
+        float wheel = rl::getMouseWheelMove();
+        if (wheel != 0) {
+            self.scroll_pos.y -= wheel * 30.0f;
+            // Clamp scroll position
+            if (self.scroll_pos.y < 0) self.scroll_pos.y = 0;
+            int max_scroll = math::max(0, ((int)self.history.len() - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
+            if (self.scroll_pos.y > max_scroll) self.scroll_pos.y = (float)max_scroll;
         }
     }
 
@@ -549,7 +582,14 @@ fn void Manager.show_clips(&self) {
     // Display clips directly (history is already sorted)
     int visual_idx; 
     foreach (entry : self.history) {
-        int y_pos = 50 + (visual_idx * spacing);
+        float y_pos = 50 + ((float)visual_idx * spacing) - self.scroll_pos.y;
+        
+        // Skip rendering items outside visible area (footer starts at ~570)
+        if (y_pos < 45 || y_pos + rec_height > SCREEN_HEIGHT - 40) {
+            visual_idx++;
+            continue;
+        }
+        
         bool is_selected = visual_idx == self.selected_idx;
 
         // rectangle
