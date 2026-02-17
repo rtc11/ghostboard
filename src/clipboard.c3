@@ -14,14 +14,14 @@ struct Clipboard {
     ObjcSelector types_sel;
 }
 
-struct Entry {
+struct StoredEntry {
     String text;
     TzDateTime timestamp;
     usz hits;
 }
 
 // Sort by hits
-fn bool Entry.less(&self, Entry other) => self.hits > other.hits;
+fn bool StoredEntry.less(&self, StoredEntry other) => self.hits > other.hits;
 
 fn bool? Clipboard.is_safe(&self) {
     @pool() {
@@ -61,8 +61,7 @@ fn void Clipboard.set(&self, String text) {
     };
 }
 
-
-fn Entry? Clipboard.get_current_clip(&self) {
+fn StoredEntry? Clipboard.get_current_clip(&self) {
     @pool() {
         ObjcId type_str = objc::nsstr("public.utf8-plain-text");
         ObjcId ns_str = objc::msg_send(self.instance, GetId_Id, "stringForType:", type_str);
@@ -75,7 +74,7 @@ fn Entry? Clipboard.get_current_clip(&self) {
     };
 }
 
-fn usz? List{Entry}.findTextIndex(&self, String text) {
+fn usz? List{StoredEntry}.findTextIndex(&self, String text) {
     foreach(i, entry: self) {
         if (entry.text == text) return i;
     }

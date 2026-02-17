@@ -1,45 +1,59 @@
 module manager;
 
-import std::sort;
-import std::collections::list;
-import config, clipboard, ui;
+import config, clipboard, ui, storage;
 import raylib5;
-import std::math;
-import std::time;
-import std::os::env;
-import std::thread;
+import std::collections::list;
 import std::io;
-import std::os::macos::objc, objc;
-import cg, cf, ct;
+import std::math;
+import std::os::env;
+import std::os::macos::objc, objc, cg, cf, ct;
+import std::sort;
+import std::thread;
+import std::time;
 
 faultdef REDACTED;
 
 struct Manager {
     Clipboard cp;
-    List{Entry} history;
+    List{StoredEntry} history;
     usz history_limit;
     Config config;
     Font font;
     UIState ui;
 }
 
-fn Manager init(usz limit = 10, Config config) {
-    ObjcClass cls = objc::class_by_name("NSPasteboard")!!;
+fn Manager init(Config config) {
     Clipboard cp = {
-        .instance = objc::msg_send(cls, SendVoid, "generalPasteboard"),
+        .instance = objc::msg_send(objc::class_by_name("NSPasteboard")!!, SendVoid, "generalPasteboard"),
         .items_sel = objc::sel_registerName("pasteboardItems"),
         .first_obj_sel = objc::sel_registerName("firstObject"),
         .types_sel = objc::sel_registerName("types"),
     };
     
-    // Try to get bundle resource path
+    Manager manager = {
+        .cp = cp,
+        .history_limit = config.history_limit,
+        .config = config,
+        .font = load_font(),
+    };
+
+    storage::load_from_file(&manager.config, &manager.history);
+
+    manager.update();
+
+    rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
+
+    return manager;
+}
+
+fn Font load_font() {
     ObjcId bundle = objc::msg_send(objc::getClass("NSBundle"), SendVoid, "mainBundle");
     ObjcId resource_path = objc::msg_send(bundle, SendVoid, "resourcePath");
     ZString bundle_resources = null;
     if (resource_path != null) {
         bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
     }
-    
+
     Font font;
     if (bundle_resources != null) {
         String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
@@ -60,42 +74,8 @@ fn Manager init(usz limit = 10, Config config) {
     } else {
         log::info("loaded font from bundle");
     }
-    
-    Manager manager = {
-        .cp = cp,
-        .history_limit = limit,
-        .config = config,
-        .font = font,
-    };
-    manager.ui.search_query.tinit(128);
-    manager.load_from_file();
-    manager.update();
-    rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
-    return manager;
+    return font;
 }
-
-fn void Manager.center_window(&self) {
-    int monitor = rl::getCurrentMonitor();
-    rl::Vector2 size = { (float)rl::getMonitorWidth(monitor), (float)rl::getMonitorHeight(monitor) };
-    rl::Vector2 scale = rl::getWindowScaleDPI();
-    int x = (int)((size.x / scale.x - ui::SCREEN_WIDTH) / 2f);
-    int y = (int)((size.y / scale.y - ui::SCREEN_HEIGHT) / 2f);
-    rl::setWindowPosition(x, y);
-}
-
-fn void Manager.show_window(&self) {
-    ui::app_to_foreground();
-    self.center_window();
-    self.ui.selected_idx = 0;
-    self.ui.mode = LIST;
-    self.ui.scroll_pos = {0, 0};
-    quicksort(&self.history);
-    rl::clearWindowState(WINDOW_HIDDEN);
-    rl::setWindowState(WINDOW_TOPMOST);
-    rl::restoreWindow();
-}
-
-// bool should_quit;
 
 fn void Manager.loop(&self) {
     int last_count = (int)objc::msg_send(self.cp.instance, GetInt, "changeCount");
@@ -117,11 +97,11 @@ fn void Manager.loop(&self) {
  
         switch (self.ui.mode) {
             case INSPECT:
-                self.show_all_text_view();
+                self.render_inspect();
                 self.menu_mode();
             case LIST:
             case SEARCH:
-                self.show_clips();
+                self.render_clips();
                 self.menu_mode();
             case HIDE:
                 rl::pollInputEvents();
@@ -241,7 +221,7 @@ fn void Manager.menu_mode(&self) {
     }
 
     if (rl::isKeyPressed(rl::KEY_ENTER)) {
-        Entry? selected = self.history.get(self.ui.selected_idx);
+        StoredEntry? selected = self.history.get(self.ui.selected_idx);
         if (try selected) {
             self.cp.set(selected.text);
         } else if (@catch(selected) == REDACTED) {
@@ -282,20 +262,20 @@ fn void Manager.menu_mode(&self) {
 }
 
 fn void Manager.add(&self, String text) {
-    Entry entry = {
+    StoredEntry entry = {
         .text = text.copy(mem),
         .timestamp = datetime::now().to_local(),
         .hits = 1,
     };
 
     self.history.push(entry);
-    self.save_to_file();
+    storage::save_to_file(&self.config, &self.history);
 }
 
 fn void Manager.remove_selected(&self) {
     if (self.history.len() == 0) return;
     
-    Entry? entry = self.history.get(self.ui.selected_idx);
+    StoredEntry? entry = self.history.get(self.ui.selected_idx);
     if (catch entry) return;
     self.history.remove_at(self.ui.selected_idx);
     
@@ -307,7 +287,7 @@ fn void Manager.remove_selected(&self) {
         self.ui.selected_idx = (int)self.history.len() - 1;
     }
     
-    self.save_to_file();
+    storage::save_to_file(&self.config, &self.history);
     log::info("removed clip at index %d", self.ui.selected_idx);
 }
 
@@ -321,7 +301,7 @@ fn bool Manager.update(&self) {
         log::warn("the clip was concealed.");
         return false;
     }
-    Entry? cur = self.cp.get_current_clip();
+    StoredEntry? cur = self.cp.get_current_clip();
     if (catch cur) {
         log::error("failed to get the clip as text from macOS");
         return false;
@@ -335,7 +315,7 @@ fn bool Manager.update(&self) {
     if (try existing_idx) {
         self.history[existing_idx].hits++;
         log::info("clip already exists, incremented hits to %d", self.history[existing_idx].hits);
-        self.save_to_file();
+        storage::save_to_file(&self.config, &self.history);
         return false;
     } 
 
@@ -346,88 +326,24 @@ fn bool Manager.update(&self) {
         if (try old = self.history.pop_first()) {
             log::info("removed clipboard history from: %s ago", datetime::now().diff_us(old.timestamp).to_nano());
             old.text.free(mem);
-            self.save_to_file();
+            storage::save_to_file(&self.config, &self.history);
         }
     }
     return true;
 }
 
-fn String Manager.get_storage_path(&self) {
-    String? home = env::tget_var("HOME");
-    if (catch home) return self.config.storage_file;
-    String dir_path = string::tformat("%s/%s", home, self.config.config_dir);
-    io::path::mkdir(dir_path, true)!!;
-    return string::tformat("%s/%s", dir_path, self.config.storage_file);
-}
-
-fn void Manager.save_to_file(&self) {
-    String path = self.get_storage_path();
-    File? file = file::open(path, "wb");
-    if (catch file) {
-        log::error("failed to open file for writing: %s", path);
-        return;
-    }
-    defer (void)file.close();
-    
-    foreach (entry: self.history) {
-        Time timestamp = entry.timestamp.time;
-        io::write_any(&file, &timestamp)!!;
-        int gmt_offset = entry.timestamp.gmt_offset;
-        io::write_any(&file, &gmt_offset)!!;
-        usz hits = entry.hits;
-        io::write_any(&file, &hits)!!;
-        usz text_len = entry.text.len;
-        io::write_any(&file, &text_len)!!;
-        io::write_all(&file, entry.text)!!;
-    }
-}
-
-fn void Manager.load_from_file(&self) {
-    String path = self.get_storage_path();
-    File? file = file::open(path, "rb");
-    if (catch file) {
-        log::info("no existing clipboard history found");
-        return;
-    }
-    defer (void)file.close();
-    
-    while (!file.eof()) {
-        long timestamp;
-        if (catch io::read_any(&file, &timestamp)) break;
-        
-        int gmt_offset;
-        if (catch io::read_any(&file, &gmt_offset)) break;
-        
-        usz hits;
-        if (catch io::read_any(&file, &hits)) break;
-        
-        usz text_len;
-        if (catch io::read_any(&file, &text_len)) break;
-        
-        char[] buffer = mem::alloc_array(char, text_len);
-        if (catch io::read_all(&file, buffer)) {
-            mem::free(buffer);
-            break;
-        }
-        
-        Entry entry = {
-            .text = ((String)buffer).copy(mem),
-            .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
-            .hits = hits,
-        };
-        self.history.push(entry);
-        mem::free(buffer);
-    }
-    
-    log::info("loaded %d clips from storage", self.history.len());
-}
-
-fn void Manager.show_clips(&self) {
+fn void Manager.render_clips(&self) {
     rl::beginDrawing();
     rl::clearBackground(ui::COLOR_BG);
     rl::setTextureFilter(self.font.texture, BILINEAR);
+    self.draw_header();
+    self.draw_search_bar();
+    self.draw_clip_list();
+    self.draw_footer();
+    rl::endDrawing();
+}
 
-    // header
+fn void Manager.draw_header(&self) {
     ZString header_txt = "GhostBoard".zstr_tcopy();
     float header_font_size = 24f;
     rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
@@ -442,7 +358,7 @@ fn void Manager.show_clips(&self) {
     };
     rl::drawRectangleRounded(header_rec, 0.5, 12, ui::COLOR_BODY);
     rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, ui::COLOR_TITLE);
-    
+
     // version number
     ZString version_txt = "v0.1.0".zstr_tcopy();
     float version_font_size = 14f;
@@ -450,18 +366,19 @@ fn void Manager.show_clips(&self) {
     float version_x = header_x + header_size.x + 8f;
     float version_y = 10f + (header_size.y - version_size.y) / 2f;
     rl::drawTextEx(self.font, version_txt, {version_x, version_y}, version_font_size, 0f, ui::COLOR_FOOTER);
-    
-    // Search bar (if in search mode)
-    int search_bar_height = 0;
+}
+
+fn void Manager.draw_search_bar(&self) {
     if (self.ui.mode == SEARCH) {
-        search_bar_height = 30;
         String search_text = self.ui.search_query.len() > 0 ? self.ui.search_query.str_view() : "Type to search...";
         ZString search_display = string::tformat_zstr("/ %s", search_text);
         rl::Vector2 search_pos = {25, 43};
         rl::Color search_color = self.ui.search_query.len() > 0 ? ui::COLOR_TITLE : ui::COLOR_FOOTER;
         rl::drawTextEx(self.font, search_display, search_pos, 18, 0f, search_color);
     }
+}
 
+fn void Manager.draw_clip_list(&self) {
     int spacing = 30;
     int rec_padding = 20;
     int rec_height = 25;
@@ -476,11 +393,11 @@ fn void Manager.show_clips(&self) {
     float badge_h = rec_height;
     float badge_y_offset = (rec_height - (float)badge_h) / 2f;
     int badge_padding = rec_padding - 5;
+    float search_bar_height = self.ui.mode == SEARCH ? 30 : 0;
 
-    // Filter by search query if active
     int visual_idx; 
+    quicksort(&self.history);
     foreach (entry : self.history) {
-        // Filter by search query
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
             String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
             String text_lower = entry.text.to_lower_tcopy();
@@ -489,7 +406,7 @@ fn void Manager.show_clips(&self) {
             }
         }
         
-        float y_pos = 50 + (float)search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
+        float y_pos = 50 + search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
         
         // Skip rendering items outside visible area (footer starts at ~570)
         if (y_pos < 45 || y_pos + rec_height > ui::SCREEN_HEIGHT - 40) {
@@ -541,18 +458,18 @@ fn void Manager.show_clips(&self) {
 
         visual_idx++;
     }
-
-    // footer
-    ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
-    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
-    rl::endDrawing();
 }
 
-fn void Manager.show_all_text_view(&self) {
+fn void Manager.draw_footer(&self) {
+    ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
+    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+}
+
+fn void Manager.render_inspect(&self) {
     rl::beginDrawing();
     rl::clearBackground(ui::COLOR_BG);
 
-    Entry? selected = self.history.get(self.ui.selected_idx);
+    StoredEntry? selected = self.history.get(self.ui.selected_idx);
 
     if (try selected) {
         // header

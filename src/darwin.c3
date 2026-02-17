@@ -6,6 +6,14 @@ module objc @if(env::DARWIN);
 import std::os::macos::objc;
 
 extern fn void register_class_pair(ObjcClass cls) @cname("objc_registerClassPair");
+extern fn void set_associated_object(ObjcId object, void* key, void* value, int policy) @cname("objc_setAssociatedObject");
+extern fn void* get_associated_object(ObjcId object, void* key) @cname("objc_getAssociatedObject");
+
+const int ASSOCIATION_ASSIGN = 0;
+const int ASSOCIATION_RETAIN_NONATOMIC = 1;
+const int ASSOCIATION_COPY_NONATOMIC = 3;
+const int ASSOCIATION_RETAIN = 01401;
+const int ASSOCIATION_COPY = 01403;
 
 alias GetInt        = fn int   (ObjcId, ObjcSelector);
 alias GetId         = fn ObjcId(ObjcId, ObjcSelector);

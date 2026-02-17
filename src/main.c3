@@ -10,16 +10,18 @@ fn void main(String[] args)
         .config_dir = ".config/ghostboard",
         .storage_file = "clips",
         .log_file = "logs",
+        .history_limit = 30,
     };
 
     logger::setup_logging(&config);
     hide_from_dock();
-    setup_tray();
     
     rl::setConfigFlags(ConfigFlag.WINDOW_UNDECORATED | ConfigFlag.WINDOW_TRANSPARENT | ConfigFlag.WINDOW_HIGHDPI);
     rl::initWindow(ui::SCREEN_WIDTH, ui::SCREEN_HEIGHT, "GhostBoard");
 
-    Manager manager = manager::init(limit: 30, config: config);
+    Manager manager = manager::init(config: config);
+
+    setup_tray(&manager);
 
     setup_event_tap(&manager);
     manager.loop();
@@ -31,11 +33,13 @@ fn void hide_from_dock() {
     rl::setConfigFlags(ConfigFlag.WINDOW_HIDDEN | ConfigFlag.WINDOW_ALWAYS_RUN);
 }
 
-fn void quit_action(Manager* manager, ObjcId self, ObjcSelector _cmd, ObjcId sender) {
-    manager.ui.mode = QUIT;
+fn void quit_action(ObjcId self, ObjcSelector _cmd, ObjcId sender) {
+    log::info("Quit action called");
+    Manager* manager = (Manager*)objc::get_associated_object(self, "manager");
+    if (manager) manager.ui.mode = QUIT;
 }
 
-fn void setup_tray() {
+fn void setup_tray(Manager* manager) {
     ObjcId system_sbar = objc::msg_send(objc::getClass("NSStatusBar"), SendVoid, "systemStatusBar");
     ObjcId status_item = objc::msg_send(system_sbar, GetId_double, "statusItemWithLength:", -1.0);
     ObjcId button = objc::msg_send(status_item, SendVoid, "button");
@@ -59,12 +63,9 @@ fn void setup_tray() {
     exit_item = objc::msg_send(exit_item, GetId_IdSelId, "initWithTitle:action:keyEquivalent:", exit_title, quit_sel, key_equivalent);
     ObjcId target = objc::msg_send(target_class, SendVoid, "alloc");
     target = objc::msg_send(target, SendVoid, "init");
+    objc::set_associated_object(target, "manager", manager, objc::ASSOCIATION_ASSIGN);
     objc::msg_send(exit_item, SendId, "setTarget:", target);
-    
-    // Add item to menu
     objc::msg_send(menu, SendId, "addItem:", exit_item);
-    
-    // Set menu on status item
     objc::msg_send(status_item, SendId, "setMenu:", menu);
 }
 
@@ -95,18 +96,12 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
         Manager* manager = (Manager*)refcon;
         if (manager.ui.mode == HIDE) {
             log::info("global hotkey detected! enabling menu");
-            manager.show_window();
+            manager.ui.show_window();
         }
         return null;
     }
     return event;
 }
-
-fn void draw_rounded_corners(rl::Rectangle rec, rl::Color color) {
-    float roundness = 0.5;
-    int segments = 12; //  higher is smoother
-    rl::drawRectangleRounded(rec, roundness, segments, color);
-} 
 
 fn ObjcId generate_tray_icon() {
     rl::Image icon = rl::genImageColor(22, 22, {0, 0, 0, 0});

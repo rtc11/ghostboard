@@ -48,3 +48,23 @@ fn void app_to_foreground() {
     objc::msg_send(shared_app, SendBool, "activateIgnoringOtherApps:", true);
 }
 
+fn void center_window() {
+    int monitor = rl::getCurrentMonitor();
+    rl::Vector2 size = { (float)rl::getMonitorWidth(monitor), (float)rl::getMonitorHeight(monitor) };
+    rl::Vector2 scale = rl::getWindowScaleDPI();
+    int x = (int)((size.x / scale.x - ui::SCREEN_WIDTH) / 2f);
+    int y = (int)((size.y / scale.y - ui::SCREEN_HEIGHT) / 2f);
+    rl::setWindowPosition(x, y);
+}
+
+fn void UIState.show_window(&self) {
+    ui::app_to_foreground();
+    center_window();
+    self.selected_idx = 0;
+    self.mode = LIST;
+    self.scroll_pos = {0, 0};
+    rl::clearWindowState(WINDOW_HIDDEN);
+    rl::setWindowState(WINDOW_TOPMOST);
+    rl::restoreWindow();
+}
+
