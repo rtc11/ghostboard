@@ -857,15 +857,15 @@ fn void Manager.render_inspect(&self) {
         rl::drawTextEx(self.font, selected.text.zstr_tcopy(), pos, 18f, 1f, ui::COLOR_TEXT);
         rl::endScissorMode();
 
-        // timestamp
-        ZString timestamp = string::tformat_zstr("%s", selected.timestamp);
-        rl::Vector2 timestamp_size = rl::measureTextEx(self.font, timestamp, 16, 0);
-        float timestamp_x = (ui::SCREEN_WIDTH - timestamp_size.x) - 25;
-        rl::drawTextEx(self.font, timestamp, {timestamp_x, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
-
-        // footer
-        ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
-        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+        // footer with hit count and full date
+        ZString hits_str = string::tformat_zstr("Copied %d times", selected.hits);
+        rl::drawTextEx(self.font, hits_str, {25, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
+        ZString date_str = string::tformat_zstr("%04d-%02d-%02d %02d:%02d:%02d", 
+            selected.timestamp.year, selected.timestamp.month.ordinal, selected.timestamp.day,
+            selected.timestamp.hour, selected.timestamp.min, selected.timestamp.sec);
+        rl::Vector2 date_size = rl::measureTextEx(self.font, date_str, 16, 0);
+        float date_x = (ui::SCREEN_WIDTH - date_size.x) - 25;
+        rl::drawTextEx(self.font, date_str, {date_x, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
 
     }
     rl::endDrawing();
