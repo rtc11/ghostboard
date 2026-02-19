@@ -8,8 +8,8 @@ fn void main(String[] args)
 {
     Config config = {
         .config_dir = ".config/ghostboard",
-        .storage_file = "clips",
-        .log_file = "logs",
+        .storage_file = "ghostboard.clips",
+        .log_file = "ghostboard.logs",
         .history_limit = 30,
     };
 

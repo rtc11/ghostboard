@@ -50,7 +50,13 @@ fn void Manager.run(&self) {
         self.render();
         thread::sleep(time::ms(8)); // ~120fps
     }
+    self.shutdown();
+}
+
+fn void Manager.shutdown(&self) {
     rl::closeWindow();
+    ObjcId pb = objc::msg_send(objc::getClass("NSPasteboard"), GetId, "generalPasteboard");
+    objc::msg_send(pb, SendVoid, "clearContents");
 }
 
 fn void Manager.process_events(&self, int* last_clipboard_count) {
@@ -129,12 +135,28 @@ fn void Manager.handle_navigation(&self) {
         return;
     }
     
+    // Count visible items based on current filter
+    int visible_count = 0;
+    foreach (entry : self.history) {
+        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+            String text_lower = entry.text.to_lower_tcopy();
+            if (!text_lower.contains(query_lower)) {
+                continue;
+            }
+        }
+        visible_count++;
+    }
+    
     if (key_down) {
         bool first_press = rl::isKeyPressed(rl::KEY_DOWN) || rl::isKeyPressed(rl::KEY_J);
         bool should_repeat = self.ui.key_repeat_counter >= KEY_REPEAT_INITIAL_DELAY && 
                              (self.ui.key_repeat_counter - KEY_REPEAT_INITIAL_DELAY) % KEY_REPEAT_DELAY == 0;
         if (first_press || should_repeat) {
-            if (self.ui.selected_idx < (int)self.history.len() - 1) {
+            if (self.ui.selected_idx < visible_count - 1) {
                 self.ui.selected_idx++;
                 
                 int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
@@ -168,14 +190,14 @@ fn void Manager.handle_navigation(&self) {
     if (wheel != 0) {
         self.ui.scroll_pos.y -= wheel * 30.0f;
         if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
-        int max_scroll = math::max(0, ((int)self.history.len() - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
+        int max_scroll = math::max(0, (visible_count - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
         if (self.ui.scroll_pos.y > max_scroll) self.ui.scroll_pos.y = (float)max_scroll;
     }
 }
 
 fn void Manager.handle_selection(&self) {
     if (rl::isKeyPressed(rl::KEY_ENTER)) {
-        StoredEntry? selected = self.history.get(self.ui.selected_idx);
+        StoredEntry? selected = self.get_selected_entry();
         if (try selected) {
             self.cp.set(selected.text);
         } else if (@catch(selected) == REDACTED) {
@@ -193,6 +215,27 @@ fn void Manager.handle_selection(&self) {
             self.remove_selected();
         }
     }
+}
+
+fn StoredEntry? Manager.get_selected_entry(&self) {
+    int visual_idx = 0;
+    foreach (entry : self.history) {
+        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+            String text_lower = entry.text.to_lower_tcopy();
+            if (!text_lower.contains(query_lower)) {
+                continue;
+            }
+        }
+        if (visual_idx == self.ui.selected_idx) {
+            return entry;
+        }
+        visual_idx++;
+    }
+    return REDACTED?;
 }
 
 fn void Manager.handle_text_input(&self) {
@@ -253,9 +296,55 @@ fn void Manager.handle_mode_switching(&self) {
     }
 }
 
+fn void Manager.handle_tab_switching(&self) {
+    if (rl::isKeyPressed(rl::KEY_TAB)) {
+        switch (self.ui.active_tab) {
+            case ALL_CLIPS:
+                self.ui.active_tab = FAVORITES;
+            case FAVORITES:
+                self.ui.active_tab = ALL_CLIPS;
+        }
+        self.ui.selected_idx = 0;
+        self.ui.scroll_pos = {0, 0};
+    }
+}
+
+fn void Manager.handle_favorite_toggle(&self) {
+    if (rl::isKeyPressed(rl::KEY_F) && self.history.len() > 0) {
+        // Find actual index based on visual index
+        int visual_idx = 0;
+        int actual_idx = -1;
+        foreach (i, entry : self.history) {
+            if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+                continue;
+            }
+            if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+                String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+                String text_lower = entry.text.to_lower_tcopy();
+                if (!text_lower.contains(query_lower)) {
+                    continue;
+                }
+            }
+            if (visual_idx == self.ui.selected_idx) {
+                actual_idx = (int)i;
+                break;
+            }
+            visual_idx++;
+        }
+        
+        if (actual_idx >= 0) {
+            self.history[actual_idx].is_favorite = !self.history[actual_idx].is_favorite;
+            storage::save_to_file(&self.config, &self.history);
+            log::info("clip %s (index %s)", self.history[actual_idx].is_favorite ? "favorited" : "unfavorited", actual_idx);
+        }
+    }
+}
+
 fn void Manager.handle_list_input(&self) {
+    self.handle_tab_switching();
     self.handle_navigation();
     self.handle_selection();
+    self.handle_favorite_toggle();
 }
 
 fn void Manager.handle_search_input(&self) {
@@ -304,17 +393,58 @@ fn void Manager.add(&self, String text) {
 
 fn void Manager.remove_selected(&self) {
     if (self.history.len() == 0) return;
-    StoredEntry? entry = self.history.get(self.ui.selected_idx);
+    
+    // Find actual index based on visual index
+    int visual_idx = 0;
+    int actual_idx = -1;
+    foreach (i, entry : self.history) {
+        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+            String text_lower = entry.text.to_lower_tcopy();
+            if (!text_lower.contains(query_lower)) {
+                continue;
+            }
+        }
+        if (visual_idx == self.ui.selected_idx) {
+            actual_idx = (int)i;
+            break;
+        }
+        visual_idx++;
+    }
+    
+    if (actual_idx < 0) return;
+    
+    StoredEntry? entry = self.history.get(actual_idx);
     if (catch entry) return;
-    self.history.remove_at(self.ui.selected_idx);
+    self.history.remove_at(actual_idx);
     entry.text.free(mem);
-    if (self.history.len() == 0) {
+    
+    // Recount visible items after removal
+    int visible_count = 0;
+    foreach (e : self.history) {
+        if (self.ui.active_tab == FAVORITES && !e.is_favorite) {
+            continue;
+        }
+        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+            String text_lower = e.text.to_lower_tcopy();
+            if (!text_lower.contains(query_lower)) {
+                continue;
+            }
+        }
+        visible_count++;
+    }
+    
+    if (visible_count == 0) {
         self.ui.selected_idx = 0;
-    } else if (self.ui.selected_idx >= self.history.len()) {
-        self.ui.selected_idx = (int)self.history.len() - 1;
+    } else if (self.ui.selected_idx >= visible_count) {
+        self.ui.selected_idx = visible_count - 1;
     }
     storage::save_to_file(&self.config, &self.history);
-    log::info("removed clip at index %d", self.ui.selected_idx);
+    log::info("removed clip at index %d", actual_idx);
 }
 
 fn bool Manager.update(&self) {
@@ -363,6 +493,7 @@ fn void Manager.render_clips(&self) {
     rl::clearBackground(ui::COLOR_BG);
     rl::setTextureFilter(self.font.texture, BILINEAR);
     self.draw_header();
+    self.draw_tabs();
     self.draw_search_bar();
     self.draw_clip_list();
     self.draw_footer();
@@ -398,10 +529,51 @@ fn void Manager.draw_search_bar(&self) {
     if (self.ui.mode == SEARCH) {
         String search_text = self.ui.search_query.len() > 0 ? self.ui.search_query.str_view() : "Type to search...";
         ZString search_display = string::tformat_zstr("/ %s", search_text);
-        rl::Vector2 search_pos = {25, 43};
+        rl::Vector2 search_pos = {25, 73};
         rl::Color search_color = self.ui.search_query.len() > 0 ? ui::COLOR_TITLE : ui::COLOR_FOOTER;
         rl::drawTextEx(self.font, search_display, search_pos, 18, 0f, search_color);
     }
+}
+
+fn void Manager.draw_tabs(&self) {
+    float tab_y = 43;
+    float tab_height = 25;
+    float tab_width = 120;
+    float tab_spacing = 10;
+    float tab_x_start = (ui::SCREEN_WIDTH - (tab_width * 2 + tab_spacing)) / 2f;
+    
+    // All Clips tab
+    rl::Rectangle all_tab = { tab_x_start, tab_y, tab_width, tab_height };
+    rl::Color all_bg = self.ui.active_tab == ALL_CLIPS ? ui::COLOR_BODY : ui::COLOR_BG;
+    rl::Color all_text = self.ui.active_tab == ALL_CLIPS ? ui::COLOR_TITLE : ui::COLOR_TEXT;
+    rl::drawRectangleRounded(all_tab, 0.5, 12, all_bg);
+    if (self.ui.active_tab == ALL_CLIPS) {
+        rl::drawRectangleRoundedLinesEx(all_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
+    }
+    ZString all_txt = "All Clips".zstr_tcopy();
+    rl::Vector2 all_size = rl::measureTextEx(self.font, all_txt, 16, 0);
+    rl::Vector2 all_pos = {
+        tab_x_start + (tab_width - all_size.x) / 2f,
+        tab_y + (tab_height - all_size.y) / 2f
+    };
+    rl::drawTextEx(self.font, all_txt, all_pos, 16, 0f, all_text);
+    
+    // Favorites tab
+    float fav_x = tab_x_start + tab_width + tab_spacing;
+    rl::Rectangle fav_tab = { fav_x, tab_y, tab_width, tab_height };
+    rl::Color fav_bg = self.ui.active_tab == FAVORITES ? ui::COLOR_BODY : ui::COLOR_BG;
+    rl::Color fav_text = self.ui.active_tab == FAVORITES ? ui::COLOR_TITLE : ui::COLOR_TEXT;
+    rl::drawRectangleRounded(fav_tab, 0.5, 12, fav_bg);
+    if (self.ui.active_tab == FAVORITES) {
+        rl::drawRectangleRoundedLinesEx(fav_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
+    }
+    ZString fav_txt = "Favorites".zstr_tcopy();
+    rl::Vector2 fav_size = rl::measureTextEx(self.font, fav_txt, 16, 0);
+    rl::Vector2 fav_pos = {
+        fav_x + (tab_width - fav_size.x) / 2f,
+        tab_y + (tab_height - fav_size.y) / 2f
+    };
+    rl::drawTextEx(self.font, fav_txt, fav_pos, 16, 0f, fav_text);
 }
 
 fn void Manager.draw_clip_list(&self) {
@@ -420,10 +592,16 @@ fn void Manager.draw_clip_list(&self) {
     float badge_y_offset = (rec_height - (float)badge_h) / 2f;
     int badge_padding = rec_padding - 5;
     float search_bar_height = self.ui.mode == SEARCH ? 30 : 0;
+    float tabs_height = 30;
 
     int visual_idx; 
     quicksort(&self.history);
     foreach (entry : self.history) {
+        // Filter by tab
+        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
             String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
             String text_lower = entry.text.to_lower_tcopy();
@@ -432,10 +610,10 @@ fn void Manager.draw_clip_list(&self) {
             }
         }
         
-        float y_pos = 50 + search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
+        float y_pos = 50 + tabs_height + search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
         
         // Skip rendering items outside visible area (footer starts at ~570)
-        if (y_pos < 45 || y_pos + rec_height > ui::SCREEN_HEIGHT - 40) {
+        if (y_pos < 75 || y_pos + rec_height > ui::SCREEN_HEIGHT - 40) {
             visual_idx++;
             continue;
         }
@@ -446,6 +624,11 @@ fn void Manager.draw_clip_list(&self) {
         rl::Color rec_color = is_selected ? ui::COLOR_BODY : ui::COLOR_BG;
         rl::Rectangle rec = { rec_padding, y_pos, rec_width, rec_height };
         rl::drawRectangleRounded(rec: rec, roundness: 0.5, segments: 12, color: rec_color); 
+
+        // favorite indicator
+        if (entry.is_favorite) {
+            rl::drawTextEx(self.font, "★".zstr_tcopy(), {(float)font_padding - 15, y_pos + font_y_offset + 3}, (float)font_size - 5, 0f, ui::COLOR_GOLD);
+        }
 
         // text
         String text = entry.text;
@@ -487,7 +670,7 @@ fn void Manager.draw_clip_list(&self) {
 }
 
 fn void Manager.draw_footer(&self) {
-    ZString footer = string::tformat_zstr("o: inspect clip       d: delete clip       enter: select clip       q: quit       hjkl: navigate");
+    ZString footer = string::tformat_zstr("o: inspect       f: favorites       d: delete       enter: select       q: quit       tab: switch tab");
     rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
 }
 
@@ -495,7 +678,7 @@ fn void Manager.render_inspect(&self) {
     rl::beginDrawing();
     rl::clearBackground(ui::COLOR_BG);
 
-    StoredEntry? selected = self.history.get(self.ui.selected_idx);
+    StoredEntry? selected = self.get_selected_entry();
 
     if (try selected) {
         // header

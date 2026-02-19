@@ -28,6 +28,7 @@ struct UIState {
     Vector2 scroll_pos;
     int key_repeat_counter;
     DString search_query;
+    Tab active_tab;
 }
 
 enum Mode {
@@ -36,6 +37,11 @@ enum Mode {
     INSPECT,
     SEARCH,
     QUIT,
+}
+
+enum Tab {
+    ALL_CLIPS,
+    FAVORITES,
 }
 
 fn void move_app_to_background() {
@@ -63,6 +69,7 @@ fn void UIState.show_window(&self) {
     self.selected_idx = 0;
     self.mode = LIST;
     self.scroll_pos = {0, 0};
+    self.active_tab = ALL_CLIPS;
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();
@@ -76,18 +83,26 @@ fn Font load_font() {
         bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
     }
 
+    // Include basic ASCII plus star symbol (U+2605)
+    int[97] codepoints;
+    for (int i = 0; i < 95; i++) {
+        codepoints[i] = 32 + i; // ASCII 32-126
+    }
+    codepoints[95] = 0x2605; // ★
+    codepoints[96] = 0x2606; // ☆
+
     Font font;
     if (bundle_resources != null) {
         String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
         log::debug("trying to load font from bundle: %s", font_path);
-        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, null, 0);
+        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, &codepoints, codepoints.len);
     } else {
         font.texture.id = 0;
     }
     
     if (font.texture.id == 0) {
         log::debug("failed to load font from bundle, trying resources/SF-Pro.ttf");
-        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, null, 0);
+        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, &codepoints, codepoints.len);
         if (font.texture.id == 0) {
             log::warn("failed to load font from resources/SF-Pro.ttf");
         } else {

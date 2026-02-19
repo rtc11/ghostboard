@@ -33,6 +33,9 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
         usz hits;
         if (catch io::read_any(&file, &hits)) break;
         
+        bool is_favorite;
+        if (catch io::read_any(&file, &is_favorite)) break;
+        
         usz text_len;
         if (catch io::read_any(&file, &text_len)) break;
         
@@ -46,6 +49,7 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             .text = ((String)buffer).copy(mem),
             .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
             .hits = hits,
+            .is_favorite = is_favorite,
         };
         history.push(entry);
         mem::free(buffer);
@@ -70,6 +74,8 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
         io::write_any(&file, &gmt_offset)!!;
         usz hits = entry.hits;
         io::write_any(&file, &hits)!!;
+        bool is_favorite = entry.is_favorite;
+        io::write_any(&file, &is_favorite)!!;
         usz text_len = entry.text.len;
         io::write_any(&file, &text_len)!!;
         io::write_all(&file, entry.text)!!;

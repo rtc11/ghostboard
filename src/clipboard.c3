@@ -18,6 +18,7 @@ struct StoredEntry {
     String text;
     TzDateTime timestamp;
     usz hits;
+    bool is_favorite;
 }
 
 // Sort by hits
