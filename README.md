@@ -2,13 +2,60 @@
 
 Clipboard manager for macOS.
 
-Clips:
-![img](resources/show_clips.png)
+## Keyboard Shortcuts
 
-Inspect clip:
-![img](resources/show_all.png)
+### Global Shortcuts (work anywhere)
+| Key | Action |
+|-----|--------|
+| `Ctrl+Shift+V` | Open GhostBoard |
+| `Ctrl+Shift+1-9` | Paste quicklist clip (slots 1-9) |
 
-# TODO
+### Navigation
+| Key | Action |
+|-----|--------|
+| `↑/↓` or `j/k` | Navigate clips |
+| `Tab` | Switch between tabs (All Clips → Favorites → Quicklist) |
+| `h` | Toggle help page |
+| `q` or `Esc` | Quit/Close window |
+
+### Actions
+| Key | Action |
+|-----|--------|
+| `Enter` | Select and paste clip |
+| `o` | Inspect full clip (scrollable view) |
+| `f` | Toggle favorite |
+| `1-9` | Assign/unassign quicklist slot |
+| `d` or `Delete` | Delete clip |
+| `/` | Search clips |
+
+### Tabs
+- **All Clips**: Complete clipboard history (sorted by usage)
+- **Favorites**: Clips marked with `f`
+- **Quicklist**: Clips assigned to slots 1-9 for quick access
+
+## Screenshots
+
+### Show all clips
+Its sorted by usage, most used is on top.
+![img](resources/all_clips.png)
+
+### Show your starred clips
+Star a clip with 'f' for favorite
+![img](resources/favorites.png)
+
+### Show quicklist
+Assign ctrl-shift-1 through 9 by hittin 1 through 9 on a clip.
+![img](resources/quicklist.png)
+
+### Open the clip for inspection
+Some clips are long, open a scrollable view to see the whole ting.
+![img](resources/inspect.png)
+
+### Open the help page
+![img](resources/help.png)
+
+
+## Feature ideas
 
 [x] search/filter clips - pres / to search through history by text content
 [x] pin/favorite clips - mark important clips and keep them in a tab
