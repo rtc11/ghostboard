@@ -711,13 +711,6 @@ fn void Manager.draw_clip_list(&self) {
         if (entry.is_favorite) {
             rl::drawTextEx(self.font, "★".zstr_tcopy(), {(float)font_padding - 15, y_pos + font_y_offset + 3}, (float)font_size - 5, 0f, ui::COLOR_GOLD);
         }
-        
-        // quicklist number indicator
-        if (entry.quicklist_number > 0) {
-            ZString num_str = string::tformat_zstr("%d", entry.quicklist_number);
-            float num_x = entry.is_favorite ? (float)font_padding - 30 : (float)font_padding - 15;
-            rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, (float)font_size, 0f, ui::COLOR_PURPLE);
-        }
 
         // text
         String text = entry.text;
@@ -745,6 +738,14 @@ fn void Manager.draw_clip_list(&self) {
             badge_y + (badge_h - count_size.y) / 2f,
         };
         rl::drawTextEx(self.font, count_str, count_pos, 14, 0, ui::COLOR_BADGE_TEXT);
+        
+        // quicklist number indicator (left of badge)
+        if (entry.quicklist_number > 0) {
+            ZString num_str = string::tformat_zstr("%d", entry.quicklist_number);
+            rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
+            float num_x = badge_x - num_size.x - 10;
+            rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, 16, 0f, ui::COLOR_PURPLE);
+        }
 
         // timestamp footer
         if (is_selected) {
