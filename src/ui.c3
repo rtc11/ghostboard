@@ -83,13 +83,14 @@ fn Font load_font() {
         bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
     }
 
-    // Include basic ASCII plus star symbol (U+2605)
+    // Include basic ASCII plus extra symbols
     int[97] codepoints;
     for (int i = 0; i < 95; i++) {
         codepoints[i] = 32 + i; // ASCII 32-126
     }
-    codepoints[95] = 0x2605; // ★
-    codepoints[96] = 0x2606; // ☆
+    // extra codepoints
+    codepoints[95] = 0x2605; // ★ (U+2605)
+    codepoints[96] = 0x2606; // ☆ (U+2606)
 
     Font font;
     if (bundle_resources != null) {

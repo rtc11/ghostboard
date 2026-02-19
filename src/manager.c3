@@ -200,14 +200,12 @@ fn void Manager.handle_selection(&self) {
         StoredEntry? selected = self.get_selected_entry();
         if (try selected) {
             self.cp.set(selected.text);
-        } else if (@catch(selected) == REDACTED) {
-            self.cp.set("***");
+            self.ui.mode = HIDE;
+            rl::setWindowState(WINDOW_HIDDEN);
+            ui::move_app_to_background();
+            thread::sleep(time::ms(50));
+            self.simulate_paste();
         }
-        self.ui.mode = HIDE;
-        rl::setWindowState(WINDOW_HIDDEN);
-        ui::move_app_to_background();
-        thread::sleep(time::ms(50));
-        self.simulate_paste();
     }
     
     if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE)) {
