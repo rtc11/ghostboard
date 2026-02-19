@@ -107,8 +107,8 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
         return null;
     }
     
-    // Ctrl+Shift+1-9 for quicklist
-    if ((control || command) && shift && keycode >= 0x12 && keycode <= 0x1C) {
+    // Ctrl+Shift+1-9 for quicklist (only when app is hidden)
+    if ((control || command) && shift && keycode >= 0x12 && keycode <= 0x1C && manager.ui.mode == HIDE) {
         int num = 0;
         switch (keycode) {
             case 0x12: num = 1;
@@ -122,7 +122,9 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
             case 0x19: num = 9;
         }
         if (num > 0) {
+            log::info("checking for quicklist clip with number %d", num);
             foreach (entry : manager.history) {
+                log::debug("clip has quicklist_number: %d", entry.quicklist_number);
                 if (entry.quicklist_number == num) {
                     manager.cp.set(entry.text);
                     if (manager.ui.mode == HIDE) {

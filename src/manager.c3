@@ -396,9 +396,10 @@ fn void Manager.handle_quicklist_toggle(&self) {
                     log::info("removed clip from quicklist slot %d", num);
                 } else {
                     // Remove the number from any other clip first
-                    foreach (entry : self.history) {
-                        if (entry.quicklist_number == num) {
-                            entry.quicklist_number = 0;
+                    for (int j = 0; j < self.history.len(); j++) {
+                        if (self.history[j].quicklist_number == num) {
+                            self.history[j].quicklist_number = 0;
+                            log::info("cleared quicklist slot %d from previous clip", num);
                         }
                     }
                     self.history[actual_idx].quicklist_number = num;

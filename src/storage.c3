@@ -86,5 +86,6 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
         io::write_any(&file, &text_len)!!;
         io::write_all(&file, entry.text)!!;
     }
+    log::info("saved %d clips to storage", history.len());
 }
 
