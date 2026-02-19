@@ -12,7 +12,7 @@ fn void main(String[] args)
         .config_dir = ".config/ghostboard",
         .storage_file = "ghostboard.clips",
         .log_file = "ghostboard.logs",
-        .history_limit = 30,
+        .history_limit = 500,
     };
 
     logger::setup_logging(&config);

@@ -20,6 +20,7 @@ struct StoredEntry {
     usz hits;
     bool is_favorite;
     int quicklist_number;
+    String source_app;
 }
 
 // Sort by hits
@@ -69,9 +70,18 @@ fn StoredEntry? Clipboard.get_current_clip(&self) {
         ObjcId ns_str = objc::msg_send(self.instance, GetId_Id, "stringForType:", type_str);
         if (ns_str == null) return EMPTY?;
         ZString zstr = (ZString)objc::msg_send(ns_str, SendVoid, "UTF8String");
+        
+        // Get frontmost application
+        ObjcId workspace = objc::msg_send(objc::getClass("NSWorkspace"), SendVoid, "sharedWorkspace");
+        ObjcId frontmost_app = objc::msg_send(workspace, SendVoid, "frontmostApplication");
+        ObjcId app_name_ns = objc::msg_send(frontmost_app, SendVoid, "localizedName");
+        ZString app_name_zstr = (ZString)objc::msg_send(app_name_ns, SendVoid, "UTF8String");
+        String source_app = app_name_zstr != null ? app_name_zstr.str_view().copy(mem) : "Unknown".copy(mem);
+        
         return {
             .text = zstr.copy(mem),
             .timestamp = datetime::now().to_local(),
+            .source_app = source_app,
         };
     };
 }

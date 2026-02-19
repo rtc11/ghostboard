@@ -471,11 +471,12 @@ fn void Manager.handle_help_input(&self) {
     }
 }
 
-fn void Manager.add(&self, String text) {
+fn void Manager.add(&self, String text, String source_app) {
     StoredEntry entry = {
         .text = text.copy(mem),
         .timestamp = datetime::now().to_local(),
         .hits = 1,
+        .source_app = source_app.copy(mem),
     };
 
     self.history.push(entry);
@@ -572,8 +573,8 @@ fn bool Manager.update(&self) {
         return false;
     } 
 
-    log::info("new clip saved");
-    self.add(cur.text);
+    log::info("new clip saved from %s", cur.source_app);
+    self.add(cur.text, cur.source_app);
 
     if (self.history.len() > self.history_limit) {
         if (try old = self.history.pop_first()) {
@@ -858,9 +859,9 @@ fn void Manager.render_inspect(&self) {
         rl::drawTextEx(self.font, selected.text.zstr_tcopy(), pos, 18f, 1f, ui::COLOR_TEXT);
         rl::endScissorMode();
 
-        // footer with hit count and full date
-        ZString hits_str = string::tformat_zstr("Copied %d times", selected.hits);
-        rl::drawTextEx(self.font, hits_str, {25, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
+        // footer with hit count, source app, and full date
+        ZString footer_left = string::tformat_zstr("Copied %d times   From: %s", selected.hits, selected.source_app);
+        rl::drawTextEx(self.font, footer_left, {25, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
         ZString date_str = string::tformat_zstr("%04d-%02d-%02d %02d:%02d:%02d", 
             selected.timestamp.year, selected.timestamp.month.ordinal, selected.timestamp.day,
             selected.timestamp.hour, selected.timestamp.min, selected.timestamp.sec);
