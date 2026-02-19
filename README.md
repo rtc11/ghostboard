@@ -57,17 +57,19 @@ Some clips are long, open a scrollable view to see the whole ting.
 
 ## Feature ideas
 
-[x] search/filter clips - pres / to search through history by text content
-[x] pin/favorite clips - mark important clips and keep them in a tab
-[ ] sessions/tabs
-[x] keymap for paste without showing menu: ctrl-shift-1 through 9
-[ ] clipboard categories/tags - auto-detect urls, code snippets, images, etc and show icons/badges
-[ ] rich text/image preview - show formatted text or thumbnails
-[x] duplicate detection - merge identical entries
-[x] export/import history
-[ ] configurable hotkey - let use change ctrl-shift-v in settings
-[ ] dark/light theme toggle
-[ ] clipboard templates - save frequently used text snippets
-[ ] statistics - show most copied items, usage patterns
-[ ] custom fonts
-[ ] window resize
+- [x] search/filter clips - press / to search through history by text content
+- [x] pin/favorite clips - mark important clips and keep them in a tab
+- [x] sessions/tabs - multiple tabs for All Clips, Favorites, and Quicklist
+- [x] keymap for paste without showing menu: ctrl-shift-1 through 9
+- [x] duplicate detection - merge identical entries and track hit count
+- [x] export/import history - binary storage format
+- [x] help page - press h to see keyboard shortcuts
+- [x] source app tracking - shows which app the clip was copied from
+- [ ] clipboard categories/tags - auto-detect urls, code snippets, images, etc and show icons/badges
+- [ ] rich text/image preview - show formatted text or thumbnails
+- [ ] configurable hotkey - let user change ctrl-shift-v in settings
+- [ ] dark/light theme toggle
+- [ ] clipboard templates - save frequently used text snippets
+- [ ] statistics - show most copied items, usage patterns
+- [ ] window resize
+
