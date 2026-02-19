@@ -19,6 +19,7 @@ struct StoredEntry {
     TzDateTime timestamp;
     usz hits;
     bool is_favorite;
+    int quicklist_number;
 }
 
 // Sort by hits

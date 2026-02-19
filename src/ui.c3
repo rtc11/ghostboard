@@ -42,6 +42,7 @@ enum Mode {
 enum Tab {
     ALL_CLIPS,
     FAVORITES,
+    QUICKLIST,
 }
 
 fn void move_app_to_background() {
@@ -49,7 +50,7 @@ fn void move_app_to_background() {
     objc::msg_send(shared_app, GetId_Id, "hide:", shared_app);
 }
 
-fn void app_to_foreground() {
+fn void move_app_to_foreground() {
     ObjcId shared_app = objc::msg_send(objc::getClass("NSApplication"), SendVoid, "sharedApplication");
     objc::msg_send(shared_app, SendBool, "activateIgnoringOtherApps:", true);
 }
@@ -64,7 +65,7 @@ fn void center_window() {
 }
 
 fn void UIState.show_window(&self) {
-    ui::app_to_foreground();
+    ui::move_app_to_foreground();
     center_window();
     self.selected_idx = 0;
     self.mode = LIST;

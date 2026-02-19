@@ -141,6 +141,9 @@ fn void Manager.handle_navigation(&self) {
         if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
             continue;
         }
+        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
+            continue;
+        }
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
             String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
             String text_lower = entry.text.to_lower_tcopy();
@@ -203,7 +206,6 @@ fn void Manager.handle_selection(&self) {
             self.ui.mode = HIDE;
             rl::setWindowState(WINDOW_HIDDEN);
             ui::move_app_to_background();
-            thread::sleep(time::ms(50));
             self.simulate_paste();
         }
     }
@@ -219,6 +221,9 @@ fn StoredEntry? Manager.get_selected_entry(&self) {
     int visual_idx = 0;
     foreach (entry : self.history) {
         if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
             continue;
         }
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
@@ -297,10 +302,9 @@ fn void Manager.handle_mode_switching(&self) {
 fn void Manager.handle_tab_switching(&self) {
     if (rl::isKeyPressed(rl::KEY_TAB)) {
         switch (self.ui.active_tab) {
-            case ALL_CLIPS:
-                self.ui.active_tab = FAVORITES;
-            case FAVORITES:
-                self.ui.active_tab = ALL_CLIPS;
+            case ALL_CLIPS: self.ui.active_tab = FAVORITES;
+            case FAVORITES: self.ui.active_tab = QUICKLIST;
+            case QUICKLIST: self.ui.active_tab = ALL_CLIPS;
         }
         self.ui.selected_idx = 0;
         self.ui.scroll_pos = {0, 0};
@@ -338,11 +342,64 @@ fn void Manager.handle_favorite_toggle(&self) {
     }
 }
 
+fn void Manager.handle_quicklist_toggle(&self) {
+    if (self.history.len() == 0) return;
+    
+    // Check for number keys 1-9
+    for (int num = 1; num <= 9; num++) {
+        KeyboardKey key = (KeyboardKey)((int)rl::KEY_ONE + (num - 1));
+        if (rl::isKeyPressed(key)) {
+            // Find actual index based on visual index
+            int visual_idx = 0;
+            int actual_idx = -1;
+            foreach (i, entry : self.history) {
+                if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+                    continue;
+                }
+                if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
+                    continue;
+                }
+                if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+                    String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+                    String text_lower = entry.text.to_lower_tcopy();
+                    if (!text_lower.contains(query_lower)) {
+                        continue;
+                    }
+                }
+                if (visual_idx == self.ui.selected_idx) {
+                    actual_idx = (int)i;
+                    break;
+                }
+                visual_idx++;
+            }
+            
+            if (actual_idx >= 0) {
+                if (self.history[actual_idx].quicklist_number == num) {
+                    self.history[actual_idx].quicklist_number = 0;
+                    log::info("removed clip from quicklist slot %d", num);
+                } else {
+                    // Remove the number from any other clip first
+                    foreach (entry : self.history) {
+                        if (entry.quicklist_number == num) {
+                            entry.quicklist_number = 0;
+                        }
+                    }
+                    self.history[actual_idx].quicklist_number = num;
+                    log::info("assigned clip to quicklist slot %d", num);
+                }
+                storage::save_to_file(&self.config, &self.history);
+            }
+            break;
+        }
+    }
+}
+
 fn void Manager.handle_list_input(&self) {
     self.handle_tab_switching();
     self.handle_navigation();
     self.handle_selection();
     self.handle_favorite_toggle();
+    self.handle_quicklist_toggle();
 }
 
 fn void Manager.handle_search_input(&self) {
@@ -399,6 +456,9 @@ fn void Manager.remove_selected(&self) {
         if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
             continue;
         }
+        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
+            continue;
+        }
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
             String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
             String text_lower = entry.text.to_lower_tcopy();
@@ -424,6 +484,9 @@ fn void Manager.remove_selected(&self) {
     int visible_count = 0;
     foreach (e : self.history) {
         if (self.ui.active_tab == FAVORITES && !e.is_favorite) {
+            continue;
+        }
+        if (self.ui.active_tab == QUICKLIST && e.quicklist_number == 0) {
             continue;
         }
         if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
@@ -536,9 +599,10 @@ fn void Manager.draw_search_bar(&self) {
 fn void Manager.draw_tabs(&self) {
     float tab_y = 43;
     float tab_height = 25;
-    float tab_width = 120;
+    float tab_width = 100;
     float tab_spacing = 10;
-    float tab_x_start = (ui::SCREEN_WIDTH - (tab_width * 2 + tab_spacing)) / 2f;
+    float total_width = tab_width * 3 + tab_spacing * 2;
+    float tab_x_start = (ui::SCREEN_WIDTH - total_width) / 2f;
     
     // All Clips tab
     rl::Rectangle all_tab = { tab_x_start, tab_y, tab_width, tab_height };
@@ -572,6 +636,23 @@ fn void Manager.draw_tabs(&self) {
         tab_y + (tab_height - fav_size.y) / 2f
     };
     rl::drawTextEx(self.font, fav_txt, fav_pos, 16, 0f, fav_text);
+    
+    // Quicklist tab
+    float quick_x = fav_x + tab_width + tab_spacing;
+    rl::Rectangle quick_tab = { quick_x, tab_y, tab_width, tab_height };
+    rl::Color quick_bg = self.ui.active_tab == QUICKLIST ? ui::COLOR_BODY : ui::COLOR_BG;
+    rl::Color quick_text = self.ui.active_tab == QUICKLIST ? ui::COLOR_TITLE : ui::COLOR_TEXT;
+    rl::drawRectangleRounded(quick_tab, 0.5, 12, quick_bg);
+    if (self.ui.active_tab == QUICKLIST) {
+        rl::drawRectangleRoundedLinesEx(quick_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
+    }
+    ZString quick_txt = "Quicklist".zstr_tcopy();
+    rl::Vector2 quick_size = rl::measureTextEx(self.font, quick_txt, 16, 0);
+    rl::Vector2 quick_pos = {
+        quick_x + (tab_width - quick_size.x) / 2f,
+        tab_y + (tab_height - quick_size.y) / 2f
+    };
+    rl::drawTextEx(self.font, quick_txt, quick_pos, 16, 0f, quick_text);
 }
 
 fn void Manager.draw_clip_list(&self) {
@@ -597,6 +678,9 @@ fn void Manager.draw_clip_list(&self) {
     foreach (entry : self.history) {
         // Filter by tab
         if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+            continue;
+        }
+        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
             continue;
         }
         
@@ -626,6 +710,13 @@ fn void Manager.draw_clip_list(&self) {
         // favorite indicator
         if (entry.is_favorite) {
             rl::drawTextEx(self.font, "★".zstr_tcopy(), {(float)font_padding - 15, y_pos + font_y_offset + 3}, (float)font_size - 5, 0f, ui::COLOR_GOLD);
+        }
+        
+        // quicklist number indicator
+        if (entry.quicklist_number > 0) {
+            ZString num_str = string::tformat_zstr("%d", entry.quicklist_number);
+            float num_x = entry.is_favorite ? (float)font_padding - 30 : (float)font_padding - 15;
+            rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, (float)font_size, 0f, ui::COLOR_PURPLE);
         }
 
         // text
@@ -668,7 +759,7 @@ fn void Manager.draw_clip_list(&self) {
 }
 
 fn void Manager.draw_footer(&self) {
-    ZString footer = string::tformat_zstr("o: inspect       f: favorites       d: delete       enter: select       q: quit       tab: switch tab");
+    ZString footer = string::tformat_zstr("o: inspect   f: favorite   1-9: quicklist   d: delete   enter: select   q: quit   tab: switch");
     rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
 }
 
@@ -745,6 +836,7 @@ fn void Manager.render_inspect(&self) {
 }
 
 fn void Manager.simulate_paste(&self) {
+    thread::sleep(time::ms(50)); // race condition workaround -  wait for window transition
     void* source = cg::eventSourceCreate(0);
 
     void* v_down = cg::eventCreateKeyboardEvent(source, cg::KEY_V, true);

@@ -36,6 +36,9 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
         bool is_favorite;
         if (catch io::read_any(&file, &is_favorite)) break;
         
+        int quicklist_number;
+        if (catch io::read_any(&file, &quicklist_number)) break;
+        
         usz text_len;
         if (catch io::read_any(&file, &text_len)) break;
         
@@ -50,6 +53,7 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
             .hits = hits,
             .is_favorite = is_favorite,
+            .quicklist_number = quicklist_number,
         };
         history.push(entry);
         mem::free(buffer);
@@ -76,6 +80,8 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
         io::write_any(&file, &hits)!!;
         bool is_favorite = entry.is_favorite;
         io::write_any(&file, &is_favorite)!!;
+        int quicklist_number = entry.quicklist_number;
+        io::write_any(&file, &quicklist_number)!!;
         usz text_len = entry.text.len;
         io::write_any(&file, &text_len)!!;
         io::write_all(&file, entry.text)!!;

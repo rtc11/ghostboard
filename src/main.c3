@@ -1,5 +1,7 @@
 import std::core::log, logger;
 import std::os::macos::objc, objc;
+import std::thread;
+import std::time;
 import cg, cf, ct;
 import config, clipboard, manager, ui;
 import raylib5;
@@ -92,14 +94,48 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     log::debug("key event - keycode: 0x%x, flags: 0x%x", keycode, flags);
     bool control = (flags & 0x40000) != 0;
     bool shift = (flags & 0x20000) != 0;
+    bool command = (flags & 0x100000) != 0;
+    
+    Manager* manager = (Manager*)refcon;
+    
+    // Ctrl+Shift+V to open menu
     if (control && shift && keycode == 0x09) {
-        Manager* manager = (Manager*)refcon;
         if (manager.ui.mode == HIDE) {
             log::info("global hotkey detected! enabling menu");
             manager.ui.show_window();
         }
         return null;
     }
+    
+    // Ctrl+Shift+1-9 for quicklist
+    if ((control || command) && shift && keycode >= 0x12 && keycode <= 0x1C) {
+        int num = 0;
+        switch (keycode) {
+            case 0x12: num = 1;
+            case 0x13: num = 2;
+            case 0x14: num = 3;
+            case 0x15: num = 4;
+            case 0x17: num = 5;
+            case 0x16: num = 6;
+            case 0x1A: num = 7;
+            case 0x1C: num = 8;
+            case 0x19: num = 9;
+        }
+        if (num > 0) {
+            foreach (entry : manager.history) {
+                if (entry.quicklist_number == num) {
+                    manager.cp.set(entry.text);
+                    if (manager.ui.mode == HIDE) {
+                        manager.simulate_paste();
+                    }
+                    log::info("pasted quicklist clip %d", num);
+                    return null;
+                }
+            }
+            log::info("no clip assigned to quicklist slot %d", num);
+        }
+    }
+    
     return event;
 }
 
