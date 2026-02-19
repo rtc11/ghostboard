@@ -76,6 +76,7 @@ fn void Manager.render(&self) {
         case INSPECT: self.render_inspect();
         case LIST   : self.render_clips();
         case SEARCH : self.render_clips();
+        case HELP   : self.render_help();
         case HIDE   : self.render_hidden();
         case QUIT   :
     }
@@ -115,6 +116,7 @@ fn void Manager.handle_input(&self) {
         case LIST: self.handle_list_input();
         case SEARCH: self.handle_search_input();
         case INSPECT: self.handle_inspect_input();
+        case HELP: self.handle_help_input();
         case HIDE:
         case QUIT:
     }
@@ -266,12 +268,27 @@ fn void Manager.handle_mode_switching(&self) {
                 self.ui.selected_idx = 0;
             case INSPECT:
                 self.ui.mode = LIST;
+            case HELP:
+                self.ui.mode = LIST;
+                self.ui.scroll_pos = {0, 0};
             default:
                 self.ui.mode = HIDE;
                 rl::setWindowState(WINDOW_HIDDEN);
                 ui::move_app_to_background();
         }
         return;
+    }
+    
+    // H to toggle help mode
+    if (rl::isKeyPressed(rl::KEY_H)) {
+        switch (self.ui.mode) {
+            case LIST:
+                self.ui.mode = HELP;
+                self.ui.scroll_pos = {0, 0};
+            case HELP:
+                self.ui.mode = LIST;
+            default:
+        }
     }
     
     // / to enter search mode
@@ -425,6 +442,24 @@ fn void Manager.handle_inspect_input(&self) {
     if (rl::isKeyDown(rl::KEY_LEFT) || rl::isKeyDown(rl::KEY_H)) {
         self.ui.scroll_pos.x -= 10.0f;
         if (self.ui.scroll_pos.x < 0) self.ui.scroll_pos.x = 0;
+    }
+    
+    // Mouse wheel scrolling
+    float wheel = rl::getMouseWheelMove();
+    if (wheel != 0) {
+        self.ui.scroll_pos.y -= wheel * 30.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+    }
+}
+
+fn void Manager.handle_help_input(&self) {
+    // Vertical scrolling
+    if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
+        self.ui.scroll_pos.y += 10.0f;
+    }
+    if (rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K)) {
+        self.ui.scroll_pos.y -= 10.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
     }
     
     // Mouse wheel scrolling
@@ -760,7 +795,7 @@ fn void Manager.draw_clip_list(&self) {
 }
 
 fn void Manager.draw_footer(&self) {
-    ZString footer = string::tformat_zstr("o: inspect   f: favorite   1-9: quicklist   d: delete   enter: select   q: quit   tab: switch");
+    ZString footer = string::tformat_zstr("h: help       q: quit");
     rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
 }
 
@@ -852,5 +887,106 @@ fn void Manager.simulate_paste(&self) {
     cf::release(v_down);
     cf::release(v_up);
     cf::release(source);
+}
+
+fn void Manager.render_help(&self) {
+    rl::beginDrawing();
+    rl::clearBackground(ui::COLOR_BG);
+    rl::setTextureFilter(self.font.texture, BILINEAR);
+    
+    // Header
+    ZString header_txt = "Keyboard Shortcuts".zstr_tcopy();
+    float header_font_size = 24f;
+    rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
+    float header_x = (ui::SCREEN_WIDTH - header_size.x) / 2f;
+    int header_padding = 10;
+    rl::Rectangle header_rec = { 
+        header_x - header_padding, 
+        10 - header_padding / 2f, 
+        header_size.x + header_padding * 2f, 
+        header_size.y + header_padding 
+    };
+    rl::drawRectangleRounded(header_rec, 0.5, 12, ui::COLOR_BODY);
+    rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, ui::COLOR_TITLE);
+    
+    // Scrollable help content area
+    rl::Rectangle help_area = { 20, 50, ui::SCREEN_WIDTH - 40, ui::SCREEN_HEIGHT - 90 };
+    rl::drawRectangleRounded(help_area, 0.2, 8, ui::COLOR_BODY);
+    
+    int padding = 20;
+    rl::Vector2 scale = rl::getWindowScaleDPI();
+    rl::beginScissorMode(
+        x: (20 + padding) * (int)scale.x, 
+        y: (50 + padding) * (int)scale.y,
+        width: (ui::SCREEN_WIDTH - 40 - padding * 2) * (int)scale.x,
+        height: (ui::SCREEN_HEIGHT - 90 - padding * 2) * (int)scale.y,
+    );
+    
+    float y_pos = 50f + padding - self.ui.scroll_pos.y;
+    float line_height = 28;
+    float section_spacing = 15;
+    float indent = 30;
+    
+    // Navigation section
+    rl::drawTextEx(self.font, "Navigation:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "↑/↓ or j/k".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Navigate clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Tab".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Switch between tabs".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height + section_spacing;
+    
+    // Actions section
+    rl::drawTextEx(self.font, "Actions:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Enter".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Select and paste clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "o".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Inspect full clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "f".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Toggle favorite".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "1-9".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Assign to quicklist slot".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "d or Delete".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Delete clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "/".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Search clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height + section_spacing;
+    
+    // Global Shortcuts section
+    rl::drawTextEx(self.font, "Global Shortcuts:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Ctrl+Shift+V".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Open GhostBoard".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Ctrl+Shift+1-9".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Paste quicklist clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height + section_spacing;
+    
+    // Tabs section
+    rl::drawTextEx(self.font, "Tabs:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "All Clips".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "All clipboard history".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Favorites".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Favorited clips only".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Quicklist".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Numbered clips (1-9)".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    
+    rl::endScissorMode();
+    
+    // Footer
+    ZString footer = string::tformat_zstr("h: help       q: quit");
+    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+    
+    rl::endDrawing();
 }
 

@@ -36,6 +36,7 @@ enum Mode {
     LIST,
     INSPECT,
     SEARCH,
+    HELP,
     QUIT,
 }
 
@@ -85,13 +86,15 @@ fn Font load_font() {
     }
 
     // Include basic ASCII plus extra symbols
-    int[97] codepoints;
+    int[99] codepoints;
     for (int i = 0; i < 95; i++) {
         codepoints[i] = 32 + i; // ASCII 32-126
     }
     // extra codepoints
     codepoints[95] = 0x2605; // ★ (U+2605)
     codepoints[96] = 0x2606; // ☆ (U+2606)
+    codepoints[97] = 0x2191; // ↑ (U+2191)
+    codepoints[98] = 0x2193; // ↓ (U+2193)
 
     Font font;
     if (bundle_resources != null) {
