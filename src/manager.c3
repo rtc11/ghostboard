@@ -13,6 +13,13 @@ import std::time;
 
 faultdef REDACTED;
 
+// Layout constants
+const int MAX_VISIBLE_ITEMS = 16;
+const int ITEM_SPACING = 30;
+const int HEADER_HEIGHT = 50;
+const int FOOTER_HEIGHT = 40;
+const int TAB_HEIGHT = 30;
+
 struct Manager {
     Clipboard cp;
     List{StoredEntry} history;
@@ -183,8 +190,6 @@ fn void Manager.handle_input(&self) {
 }
 
 fn void Manager.handle_page_scroll(&self, int visible_count, bool is_down) {
-    const int MAX_VISIBLE_ITEMS = 16;
-    const int ITEM_SPACING = 30;
     const int PAGE_JUMP = MAX_VISIBLE_ITEMS / 2;
     
     if (visible_count == 0) return;
@@ -204,8 +209,6 @@ fn void Manager.handle_page_scroll(&self, int visible_count, bool is_down) {
 }
 
 fn void Manager.handle_navigation(&self) {
-    const int MAX_VISIBLE_ITEMS = 16;
-    const int ITEM_SPACING = 30;
     const int KEY_REPEAT_INITIAL_DELAY = 20;
     const int KEY_REPEAT_DELAY = 3;
     
@@ -894,6 +897,58 @@ fn void Manager.simulate_paste(&self) {
     cf::release(source);
 }
 
+struct HelpItem {
+    ZString key;
+    ZString description;
+}
+
+struct HelpSection {
+    ZString title;
+    List{HelpItem} items;
+}
+
+fn List{HelpSection} get_help_sections() {
+    List{HelpSection} sections;
+
+    List{HelpItem} nav_items;
+    nav_items.push_all({
+        {"↑/↓ or j/k", "Navigate clips"},
+        {"Ctrl+d", "Page down"},
+        {"Ctrl+u", "Page up"},
+        {"Tab", "Switch between tabs"},
+    });
+    sections.push({.title = "Navigation:", .items = nav_items});
+    
+    List{HelpItem} action_items;
+    action_items.push_all({
+        {"Enter", "Select and paste clip"},
+        {"o", "Inspect full clip"},
+        {"f", "Toggle favorite"},
+        {"1-9", "Assign to quicklist slot"},
+        {"dd", "Delete clip (double-tap)"},
+        {"Delete", "Delete clip immediately"},
+        {"/", "Search clips"},
+    });
+    sections.push({.title = "Actions:", .items = action_items});
+    
+    List{HelpItem} global_items;
+    global_items.push_all({
+        {"Ctrl+Shift+V", "Open GhostBoard"},
+        {"Ctrl+Shift+1-9", "Paste quicklist clip"},
+    });
+    sections.push({.title = "Global Shortcuts:", .items = global_items});
+    
+    List{HelpItem} tab_items;
+    tab_items.push_all({
+        {"All Clips", "All clipboard history"},
+        {"Favorites", "Favorited clips only"},
+        {"Quicklist", "Numbered clips (1-9)"},
+    });
+    sections.push({.title = "Tabs:", .items = tab_items});
+    
+    return sections;
+}
+
 fn void Manager.render_help(&self) {
     rl::beginDrawing();
     rl::clearBackground(ui::COLOR_BG);
@@ -931,69 +986,22 @@ fn void Manager.render_help(&self) {
     float line_height = 28;
     float section_spacing = 15;
     float indent = 30;
+    float key_x = 50 + indent;
+    float desc_x = 250;
     
-    // Navigation section
-    rl::drawTextEx(self.font, "Navigation:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "↑/↓ or j/k".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Navigate clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Ctrl+d".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Page down".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Ctrl+u".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Page up".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Tab".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Switch between tabs".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height + section_spacing;
-    
-    // Actions section
-    rl::drawTextEx(self.font, "Actions:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Enter".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Select and paste clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "o".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Inspect full clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "f".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Toggle favorite".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "1-9".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Assign to quicklist slot".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "dd".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Delete clip (double-tap)".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Delete".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Delete clip immediately".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "/".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Search clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height + section_spacing;
-    
-    // Global Shortcuts section
-    rl::drawTextEx(self.font, "Global Shortcuts:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Ctrl+Shift+V".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Open GhostBoard".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Ctrl+Shift+1-9".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Paste quicklist clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height + section_spacing;
-    
-    // Tabs section
-    rl::drawTextEx(self.font, "Tabs:".zstr_tcopy(), {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "All Clips".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "All clipboard history".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Favorites".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Favorited clips only".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
-    y_pos += line_height;
-    rl::drawTextEx(self.font, "Quicklist".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Numbered clips (1-9)".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    List{HelpSection} sections = get_help_sections();
+    foreach (section : sections) {
+        rl::drawTextEx(self.font, section.title, {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
+        y_pos += line_height;
+        
+        foreach (item : section.items) {
+            rl::drawTextEx(self.font, item.key, {key_x, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, item.description, {desc_x, y_pos}, 18, 0f, ui::COLOR_TEXT);
+            y_pos += line_height;
+        }
+        
+        y_pos += section_spacing;
+    }
     
     rl::endScissorMode();
     
