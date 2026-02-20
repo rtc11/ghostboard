@@ -1,4 +1,7 @@
 build/
 out/
 
+*.dSYM/
+icon_generator
+
 .DS_Store
