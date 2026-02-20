@@ -85,7 +85,7 @@ Some clips are long, open a scrollable view to see the whole ting.
     - ctrl-shift-t show only todays clips
     - ctrl-shift-w show only this weeks clips
 - [ ] 'n' to add notes to a selected clip, small colored label next to the clip. search include notes
-- [ ] shift-v plus j/k to select range, then d or enter to action
+- [x] shift-v plus j/k to select range, then d or enter to action
 - [ ] paste with line numbers
 - [ ] fuzzy search (only substring search now)
 - [ ] export selected clips
