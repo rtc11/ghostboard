@@ -24,7 +24,7 @@ Clipboard manager for macOS.
 | Key | Action |
 |-----|--------|
 | `Enter` | Select and paste clip |
-| `o` | Inspect full clip (scrollable view) |
+| `o` or `i` | Inspect full clip (scrollable view) |
 | `f` | Toggle favorite |
 | `1-9` | Assign/unassign quicklist slot |
 | `dd` | Delete clip (double-tap d) |

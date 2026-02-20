@@ -393,7 +393,7 @@ fn void Manager.handle_mode_switching(&self) {
     }
     
     // O to toggle inspect mode
-    if (rl::isKeyPressed(rl::KEY_O) && self.history.len() > 0) {
+    if ((rl::isKeyPressed(rl::KEY_O) || rl::isKeyPressed(rl::KEY_I)) && self.history.len() > 0) {
         switch (self.ui.mode) {
             case LIST: self.ui.mode = INSPECT;
             case INSPECT: self.ui.mode = LIST;
@@ -960,7 +960,7 @@ fn List{HelpSection} get_help_sections() {
     List{HelpItem} action_items;
     action_items.push_all({
         {"Enter", "Select and paste clip"},
-        {"o", "Inspect full clip"},
+        {"o or i", "Inspect full clip"},
         {"f", "Toggle favorite"},
         {"1-9", "Assign to quicklist slot"},
         {"dd", "Delete clip (double-tap)"},
