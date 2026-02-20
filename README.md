@@ -25,7 +25,8 @@ Clipboard manager for macOS.
 | `o` | Inspect full clip (scrollable view) |
 | `f` | Toggle favorite |
 | `1-9` | Assign/unassign quicklist slot |
-| `d` or `Delete` | Delete clip |
+| `dd` | Delete clip (double-tap d) |
+| `Delete` | Delete clip immediately |
 | `/` | Search clips |
 
 ### Tabs

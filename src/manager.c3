@@ -124,7 +124,7 @@ fn void Manager.handle_input(&self) {
 }
 
 fn void Manager.handle_navigation(&self) {
-    const int MAX_VISIBLE_ITEMS = 17;
+    const int MAX_VISIBLE_ITEMS = 16;
     const int ITEM_SPACING = 30;
     const int KEY_REPEAT_INITIAL_DELAY = 20;
     const int KEY_REPEAT_DELAY = 3;
@@ -212,7 +212,30 @@ fn void Manager.handle_selection(&self) {
         }
     }
     
-    if (rl::isKeyPressed(rl::KEY_D) || rl::isKeyPressed(rl::KEY_DELETE)) {
+    // Double-tap 'd' to delete (vim-style dd)
+    if (rl::isKeyPressed(rl::KEY_D)) {
+        double current_time = rl::getTime();
+        if (self.ui.delete_pending && (current_time - self.ui.last_delete_press_time) < 0.5) {
+            // Second press within 0.5 seconds - delete
+            if (self.history.len() > 0) {
+                self.remove_selected();
+            }
+            self.ui.delete_pending = false;
+        } else {
+            // First press - mark as pending
+            self.ui.delete_pending = true;
+            self.ui.last_delete_press_time = current_time;
+        }
+    } else if (self.ui.delete_pending) {
+        // Reset if other key pressed or timeout
+        double current_time = rl::getTime();
+        if (current_time - self.ui.last_delete_press_time > 0.5) {
+            self.ui.delete_pending = false;
+        }
+    }
+    
+    // Keep Delete key for immediate deletion
+    if (rl::isKeyPressed(rl::KEY_DELETE)) {
         if (self.history.len() > 0) {
             self.remove_selected();
         }
@@ -282,11 +305,8 @@ fn void Manager.handle_mode_switching(&self) {
     // H to toggle help mode
     if (rl::isKeyPressed(rl::KEY_H)) {
         switch (self.ui.mode) {
-            case LIST:
-                self.ui.mode = HELP;
-                self.ui.scroll_pos = {0, 0};
-            case HELP:
-                self.ui.mode = LIST;
+            case LIST: self.ui.mode = HELP;
+            case HELP: self.ui.mode = LIST;
             default:
         }
     }
@@ -306,11 +326,8 @@ fn void Manager.handle_mode_switching(&self) {
     // O to toggle inspect mode
     if (rl::isKeyPressed(rl::KEY_O) && self.history.len() > 0) {
         switch (self.ui.mode) {
-            case LIST:
-                self.ui.mode = INSPECT;
-                self.ui.scroll_pos = {0, 0};
-            case INSPECT:
-                self.ui.mode = LIST;
+            case LIST: self.ui.mode = INSPECT;
+            case INSPECT: self.ui.mode = LIST;
             default:
         }
     }
@@ -954,8 +971,11 @@ fn void Manager.render_help(&self) {
     rl::drawTextEx(self.font, "1-9".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
     rl::drawTextEx(self.font, "Assign to quicklist slot".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
     y_pos += line_height;
-    rl::drawTextEx(self.font, "d or Delete".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-    rl::drawTextEx(self.font, "Delete clip".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    rl::drawTextEx(self.font, "dd".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Delete clip (double-tap)".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Delete".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Delete clip immediately".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
     y_pos += line_height;
     rl::drawTextEx(self.font, "/".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
     rl::drawTextEx(self.font, "Search clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);

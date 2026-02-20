@@ -29,6 +29,8 @@ struct UIState {
     int key_repeat_counter;
     DString search_query;
     Tab active_tab;
+    bool delete_pending;
+    double last_delete_press_time;
 }
 
 enum Mode {
