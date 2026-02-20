@@ -35,6 +35,8 @@ struct UIState {
     bool ctrl_u_pressed;
     bool visual_mode;
     int visual_anchor;
+    bool g_pending;
+    double last_g_press_time;
 }
 
 enum Mode {
@@ -80,6 +82,8 @@ fn void UIState.show_window(&self) {
     self.active_tab = ALL_CLIPS;
     self.visual_mode = false;
     self.visual_anchor = 0;
+    self.g_pending = false;
+    self.last_g_press_time = 0;
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();

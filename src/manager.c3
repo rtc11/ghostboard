@@ -240,6 +240,40 @@ fn void Manager.handle_navigation(&self) {
     
     int visible_count = self.count_visible_entries();
     
+    // Handle G (jump to bottom)
+    bool shift = rl::isKeyDown(rl::KEY_LEFT_SHIFT) || rl::isKeyDown(rl::KEY_RIGHT_SHIFT);
+    if (shift && rl::isKeyPressed(rl::KEY_G)) {
+        if (visible_count > 0) {
+            self.ui.selected_idx = visible_count - 1;
+            self.ui.scroll_pos.y = (float)math::max(0, (visible_count - MAX_VISIBLE_ITEMS) * ITEM_SPACING);
+            log::info("jumped to bottom (G)");
+        }
+        return;
+    }
+    
+    // Handle gg (jump to top)
+    if (rl::isKeyPressed(rl::KEY_G)) {
+        double current_time = rl::getTime();
+        if (self.ui.g_pending && (current_time - self.ui.last_g_press_time) < 0.5) {
+            // Second 'g' within 0.5 seconds - jump to top
+            self.ui.selected_idx = 0;
+            self.ui.scroll_pos.y = 0;
+            self.ui.g_pending = false;
+            log::info("jumped to top (gg)");
+        } else {
+            // First 'g' - mark as pending
+            self.ui.g_pending = true;
+            self.ui.last_g_press_time = current_time;
+        }
+        return;
+    } else if (self.ui.g_pending) {
+        // Reset if other key pressed or timeout
+        double current_time = rl::getTime();
+        if (current_time - self.ui.last_g_press_time > 0.5) {
+            self.ui.g_pending = false;
+        }
+    }
+    
     // Page scrolling with Ctrl+D and Ctrl+U (detected by event tap)
     if (self.ui.ctrl_d_pressed) {
         self.ui.ctrl_d_pressed = false;
@@ -1085,6 +1119,8 @@ fn List{HelpSection} get_help_sections() {
         {"↑/↓ or j/k", "Navigate clips"},
         {"Ctrl+d", "Page down"},
         {"Ctrl+u", "Page up"},
+        {"gg", "Jump to top"},
+        {"G", "Jump to bottom"},
         {"Tab", "Switch between tabs"},
     });
     sections.push({.title = "Navigation:", .items = nav_items});
