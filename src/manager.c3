@@ -117,6 +117,22 @@ fn int Manager.get_actual_index_from_visual(&self, int visual_idx) {
     return -1;
 }
 
+// Helper: Check if visual index is in selection range
+fn bool Manager.is_visual_selected(&self, int visual_idx) {
+    if (!self.ui.visual_mode) return false;
+    int min_idx = math::min(self.ui.visual_anchor, self.ui.selected_idx);
+    int max_idx = math::max(self.ui.visual_anchor, self.ui.selected_idx);
+    return visual_idx >= min_idx && visual_idx <= max_idx;
+}
+
+// Helper: Get count of items in visual selection
+fn int Manager.get_visual_selection_count(&self) {
+    if (!self.ui.visual_mode) return 0;
+    int min_idx = math::min(self.ui.visual_anchor, self.ui.selected_idx);
+    int max_idx = math::max(self.ui.visual_anchor, self.ui.selected_idx);
+    return max_idx - min_idx + 1;
+}
+
 fn void Manager.run(&self) {
     int last_clipboard_count = self.get_clipboard_count();
     
@@ -289,20 +305,45 @@ fn void Manager.handle_navigation(&self) {
 }
 
 fn void Manager.handle_selection(&self) {
+    // Check for Shift+V to enter visual mode
+    bool shift = rl::isKeyDown(rl::KEY_LEFT_SHIFT) || rl::isKeyDown(rl::KEY_RIGHT_SHIFT);
+    if (shift && rl::isKeyPressed(rl::KEY_V)) {
+        self.ui.visual_mode = !self.ui.visual_mode;
+        if (self.ui.visual_mode) {
+            self.ui.visual_anchor = self.ui.selected_idx;
+            log::info("entered visual mode at index %d", self.ui.selected_idx);
+        } else {
+            log::info("exited visual mode");
+        }
+        return;
+    }
+    
     if (rl::isKeyPressed(rl::KEY_ENTER)) {
-        StoredEntry? selected = self.get_selected_entry();
-        if (try selected) {
-            self.cp.set(selected.text);
-            self.ui.mode = HIDE;
-            rl::setWindowState(WINDOW_HIDDEN);
-            ui::move_app_to_background();
-            self.simulate_paste();
+        if (self.ui.visual_mode) {
+            self.paste_visual_selection();
+            self.ui.visual_mode = false;
+        } else {
+            StoredEntry? selected = self.get_selected_entry();
+            if (try selected) {
+                self.cp.set(selected.text);
+                self.ui.mode = HIDE;
+                rl::setWindowState(WINDOW_HIDDEN);
+                ui::move_app_to_background();
+                self.simulate_paste();
+            }
         }
     }
     
     // Double-tap 'd' to delete (vim-style dd) - but not with Ctrl
     bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
     if (rl::isKeyPressed(rl::KEY_D) && !ctrl) {
+        if (self.ui.visual_mode) {
+            // In visual mode, delete selected items immediately
+            self.delete_visual_selection();
+            self.ui.visual_mode = false;
+            return;
+        }
+        
         double current_time = rl::getTime();
         if (self.ui.delete_pending && (current_time - self.ui.last_delete_press_time) < 0.5) {
             // Second press within 0.5 seconds - delete
@@ -326,7 +367,12 @@ fn void Manager.handle_selection(&self) {
     // Keep Delete key for immediate deletion
     if (rl::isKeyPressed(rl::KEY_DELETE)) {
         if (self.history.len() > 0) {
-            self.remove_selected();
+            if (self.ui.visual_mode) {
+                self.delete_visual_selection();
+                self.ui.visual_mode = false;
+            } else {
+                self.remove_selected();
+            }
         }
     }
 }
@@ -353,6 +399,13 @@ fn void Manager.handle_text_input(&self) {
 
 fn void Manager.handle_mode_switching(&self) {
     if (rl::isKeyPressed(rl::KEY_ESCAPE) || rl::isKeyPressed(rl::KEY_Q)) {
+        // Exit visual mode if active
+        if (self.ui.visual_mode) {
+            self.ui.visual_mode = false;
+            log::info("exited visual mode");
+            return;
+        }
+        
         switch (self.ui.mode) {
             case SEARCH:
                 self.ui.mode = LIST;
@@ -573,6 +626,71 @@ fn void Manager.remove_selected(&self) {
     log::info("removed clip at index %d", actual_idx);
 }
 
+fn void Manager.delete_visual_selection(&self) {
+    if (!self.ui.visual_mode || self.history.len() == 0) return;
+    
+    int min_idx = math::min(self.ui.visual_anchor, self.ui.selected_idx);
+    int max_idx = math::max(self.ui.visual_anchor, self.ui.selected_idx);
+    
+    // Collect actual indices to delete (in reverse order to avoid index shifting)
+    List{int} to_delete;
+    for (int visual_idx = max_idx; visual_idx >= min_idx; visual_idx--) {
+        int actual_idx = self.get_actual_index_from_visual(visual_idx);
+        if (actual_idx >= 0) {
+            to_delete.push(actual_idx);
+        }
+    }
+    
+    // Delete in reverse order
+    foreach (actual_idx : to_delete) {
+        StoredEntry? entry = self.history.get(actual_idx);
+        if (catch entry) continue;
+        self.history.remove_at(actual_idx);
+        entry.text.free(mem);
+    }
+    
+    // Adjust selection
+    int visible_count = self.count_visible_entries();
+    if (visible_count == 0) {
+        self.ui.selected_idx = 0;
+    } else if (min_idx >= visible_count) {
+        self.ui.selected_idx = visible_count - 1;
+    } else {
+        self.ui.selected_idx = min_idx;
+    }
+    
+    storage::save_to_file(&self.config, &self.history);
+    log::info("deleted %d clips from visual selection", to_delete.len());
+}
+
+fn void Manager.paste_visual_selection(&self) {
+    if (!self.ui.visual_mode || self.history.len() == 0) return;
+    
+    int min_idx = math::min(self.ui.visual_anchor, self.ui.selected_idx);
+    int max_idx = math::max(self.ui.visual_anchor, self.ui.selected_idx);
+    
+    // Collect all selected clip texts
+    DString combined;
+    for (int visual_idx = min_idx; visual_idx <= max_idx; visual_idx++) {
+        StoredEntry? entry = self.get_entry_at_visual_index(visual_idx);
+        if (try entry) {
+            if (combined.len() > 0) {
+                combined.append("\n");
+            }
+            combined.append(entry.text);
+        }
+    }
+    
+    if (combined.len() > 0) {
+        self.cp.set(combined.str_view());
+        self.ui.mode = HIDE;
+        rl::setWindowState(WINDOW_HIDDEN);
+        ui::move_app_to_background();
+        self.simulate_paste();
+        log::info("pasted %d clips from visual selection", max_idx - min_idx + 1);
+    }
+}
+
 fn bool Manager.update(&self) {
     bool? safe = self.cp.is_safe();
     if (catch safe) {
@@ -731,9 +849,16 @@ fn String Manager.truncate_clip_text(&self, String text) {
     return result;
 }
 
-fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected) {
+fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected, bool is_visual_selected) {
     int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
-    rl::Color rec_color = is_selected ? ui::COLOR_BODY : ui::COLOR_BG;
+    rl::Color rec_color;
+    if (is_visual_selected) {
+        rec_color = ui::COLOR_PURPLE;  // Visual selection color
+    } else if (is_selected) {
+        rec_color = ui::COLOR_BODY;
+    } else {
+        rec_color = ui::COLOR_BG;
+    }
     rl::Rectangle rec = { CLIP_PADDING, y_pos, rec_width, CLIP_HEIGHT };
     rl::drawRectangleRounded(rec: rec, roundness: 0.5, segments: 12, color: rec_color);
 }
@@ -813,6 +938,7 @@ fn void Manager.draw_clip_list(&self) {
         
         float y_pos = content_start + ((float)visual_idx * ITEM_SPACING) - self.ui.scroll_pos.y;
         bool is_selected = visual_idx == self.ui.selected_idx;
+        bool is_visual_selected = self.is_visual_selected(visual_idx);
         
         // Skip rendering items outside visible area (but still increment visual_idx)
         float visible_area_start = content_start;
@@ -822,7 +948,7 @@ fn void Manager.draw_clip_list(&self) {
             continue;
         }
         
-        self.draw_clip_background(y_pos, is_selected);
+        self.draw_clip_background(y_pos, is_selected, is_visual_selected);
         self.draw_favorite_indicator(y_pos, entry.is_favorite);
         self.draw_clip_text(entry.text, y_pos, is_selected);
         self.draw_clip_badge((int)entry.text.len, y_pos, is_selected);
@@ -841,8 +967,14 @@ fn void Manager.draw_clip_list(&self) {
 }
 
 fn void Manager.draw_footer(&self) {
-    ZString footer = string::tformat_zstr("h: help       q: quit");
-    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+    if (self.ui.visual_mode) {
+        int count = self.get_visual_selection_count();
+        ZString footer = string::tformat_zstr("-- VISUAL --  %d clip%s selected       q: exit visual", count, count == 1 ? "" : "s");
+        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_PURPLE);
+    } else {
+        ZString footer = string::tformat_zstr("h: help       q: quit");
+        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+    }
 }
 
 fn void Manager.render_inspect(&self) {
@@ -968,6 +1100,16 @@ fn List{HelpSection} get_help_sections() {
         {"/", "Search clips"},
     });
     sections.push({.title = "Actions:", .items = action_items});
+    
+    List{HelpItem} visual_items;
+    visual_items.push_all({
+        {"Shift+V", "Enter visual selection"},
+        {"j/k", "Extend selection"},
+        {"Enter", "Paste all selected"},
+        {"d or Delete", "Delete all selected"},
+        {"q or Esc", "Exit visual mode"},
+    });
+    sections.push({.title = "Visual Mode:", .items = visual_items});
     
     List{HelpItem} global_items;
     global_items.push_all({

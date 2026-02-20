@@ -33,6 +33,8 @@ struct UIState {
     double last_delete_press_time;
     bool ctrl_d_pressed;
     bool ctrl_u_pressed;
+    bool visual_mode;
+    int visual_anchor;
 }
 
 enum Mode {
@@ -76,6 +78,8 @@ fn void UIState.show_window(&self) {
     self.mode = LIST;
     self.scroll_pos = {0, 0};
     self.active_tab = ALL_CLIPS;
+    self.visual_mode = false;
+    self.visual_anchor = 0;
     rl::clearWindowState(WINDOW_HIDDEN);
     rl::setWindowState(WINDOW_TOPMOST);
     rl::restoreWindow();

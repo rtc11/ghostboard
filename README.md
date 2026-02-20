@@ -75,4 +75,18 @@ Some clips are long, open a scrollable view to see the whole ting.
 - [ ] clipboard templates - save frequently used text snippets
 - [ ] statistics - show most copied items, usage patterns
 - [ ] window resize
+- [ ] smart duplicate handling
+    - show "previously copied x times"
+    - group duplicates and show last N unique clips
+    - "pin to top" frequently used clips
+- [ ] clip expiration/auto-cleanup non-fav clips older than x days
+- [ ] quick filter
+    - ctrl-shift-c show only clips from current app
+    - ctrl-shift-t show only todays clips
+    - ctrl-shift-w show only this weeks clips
+- [ ] 'n' to add notes to a selected clip, small colored label next to the clip. search include notes
+- [ ] shift-v plus j/k to select range, then d or enter to action
+- [ ] paste with line numbers
+- [ ] fuzzy search (only substring search now)
+- [ ] export selected clips
 
