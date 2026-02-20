@@ -129,14 +129,6 @@ fn void Manager.handle_navigation(&self) {
     const int KEY_REPEAT_INITIAL_DELAY = 20;
     const int KEY_REPEAT_DELAY = 3;
     
-    bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
-    bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
-    
-    if (!key_down && !key_up) {
-        self.ui.key_repeat_counter = 0;
-        return;
-    }
-    
     // Count visible items based on current filter
     int visible_count = 0;
     foreach (entry : self.history) {
@@ -154,6 +146,83 @@ fn void Manager.handle_navigation(&self) {
             }
         }
         visible_count++;
+    }
+    
+    // Page scrolling with Ctrl+D and Ctrl+U (detected by event tap)
+    if (self.ui.ctrl_d_pressed) {
+        log::info("Ctrl+D page down: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
+        self.ui.ctrl_d_pressed = false;
+        if (visible_count > 0) {
+            int page_jump = MAX_VISIBLE_ITEMS / 2;
+            self.ui.selected_idx = math::min(self.ui.selected_idx + page_jump, visible_count - 1);
+            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+            if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS - 1) {
+                self.ui.scroll_pos.y = (float)((self.ui.selected_idx - MAX_VISIBLE_ITEMS + 2) * ITEM_SPACING);
+            }
+            log::info("After Ctrl+D: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
+        }
+        return;
+    }
+    if (self.ui.ctrl_u_pressed) {
+        log::info("Ctrl+U page up: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
+        self.ui.ctrl_u_pressed = false;
+        if (visible_count > 0) {
+            int page_jump = MAX_VISIBLE_ITEMS / 2;
+            self.ui.selected_idx = math::max(self.ui.selected_idx - page_jump, 0);
+            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+            if (self.ui.selected_idx < scroll_offset) {
+                self.ui.scroll_pos.y = (float)(self.ui.selected_idx * ITEM_SPACING);
+            }
+            log::info("After Ctrl+U: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
+        }
+        return;
+    }
+    
+    bool key_down = rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J);
+    bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
+    
+    if (!key_down && !key_up) {
+        self.ui.key_repeat_counter = 0;
+        return;
+    }
+    
+    // Page scrolling with Ctrl+D and Ctrl+U
+    bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
+    bool d_pressed = rl::isKeyPressed(rl::KEY_D);
+    bool u_pressed = rl::isKeyPressed(rl::KEY_U);
+    
+    if (d_pressed) {
+        log::debug("D pressed, ctrl=%s", ctrl);
+    }
+    if (u_pressed) {
+        log::debug("U pressed, ctrl=%s", ctrl);
+    }
+    
+    if (ctrl && d_pressed) {
+        log::info("Ctrl+D page down: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
+        if (visible_count > 0) {
+            int page_jump = MAX_VISIBLE_ITEMS / 2;
+            self.ui.selected_idx = math::min(self.ui.selected_idx + page_jump, visible_count - 1);
+            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+            if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS - 1) {
+                self.ui.scroll_pos.y = (float)((self.ui.selected_idx - MAX_VISIBLE_ITEMS + 2) * ITEM_SPACING);
+            }
+            log::info("After Ctrl+D: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
+        }
+        return;
+    }
+    if (ctrl && u_pressed) {
+        log::info("Ctrl+U page up: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
+        if (visible_count > 0) {
+            int page_jump = MAX_VISIBLE_ITEMS / 2;
+            self.ui.selected_idx = math::max(self.ui.selected_idx - page_jump, 0);
+            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+            if (self.ui.selected_idx < scroll_offset) {
+                self.ui.scroll_pos.y = (float)(self.ui.selected_idx * ITEM_SPACING);
+            }
+            log::info("After Ctrl+U: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
+        }
+        return;
     }
     
     if (key_down) {
@@ -212,8 +281,9 @@ fn void Manager.handle_selection(&self) {
         }
     }
     
-    // Double-tap 'd' to delete (vim-style dd)
-    if (rl::isKeyPressed(rl::KEY_D)) {
+    // Double-tap 'd' to delete (vim-style dd) - but not with Ctrl
+    bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
+    if (rl::isKeyPressed(rl::KEY_D) && !ctrl) {
         double current_time = rl::getTime();
         if (self.ui.delete_pending && (current_time - self.ui.last_delete_press_time) < 0.5) {
             // Second press within 0.5 seconds - delete
@@ -444,6 +514,18 @@ fn void Manager.handle_search_input(&self) {
 }
 
 fn void Manager.handle_inspect_input(&self) {
+    // Page scrolling with Ctrl+D and Ctrl+U
+    bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
+    if (ctrl && rl::isKeyPressed(rl::KEY_D)) {
+        self.ui.scroll_pos.y += 200.0f;
+        return;
+    }
+    if (ctrl && rl::isKeyPressed(rl::KEY_U)) {
+        self.ui.scroll_pos.y -= 200.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+        return;
+    }
+    
     // Vertical scrolling
     if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
         self.ui.scroll_pos.y += 10.0f;
@@ -471,6 +553,18 @@ fn void Manager.handle_inspect_input(&self) {
 }
 
 fn void Manager.handle_help_input(&self) {
+    // Page scrolling with Ctrl+D and Ctrl+U
+    bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
+    if (ctrl && rl::isKeyPressed(rl::KEY_D)) {
+        self.ui.scroll_pos.y += 200.0f;
+        return;
+    }
+    if (ctrl && rl::isKeyPressed(rl::KEY_U)) {
+        self.ui.scroll_pos.y -= 200.0f;
+        if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+        return;
+    }
+    
     // Vertical scrolling
     if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
         self.ui.scroll_pos.y += 10.0f;
@@ -951,6 +1045,12 @@ fn void Manager.render_help(&self) {
     y_pos += line_height;
     rl::drawTextEx(self.font, "↑/↓ or j/k".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
     rl::drawTextEx(self.font, "Navigate clips".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Ctrl+d".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Page down".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
+    y_pos += line_height;
+    rl::drawTextEx(self.font, "Ctrl+u".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, "Page up".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);
     y_pos += line_height;
     rl::drawTextEx(self.font, "Tab".zstr_tcopy(), {50 + indent, y_pos}, 18, 0f, ui::COLOR_PURPLE);
     rl::drawTextEx(self.font, "Switch between tabs".zstr_tcopy(), {250, y_pos}, 18, 0f, ui::COLOR_TEXT);

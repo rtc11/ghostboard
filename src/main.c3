@@ -107,6 +107,20 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
         return null;
     }
     
+    // Ctrl+D and Ctrl+U for page scrolling when window is visible
+    if (control && !shift && !command && manager.ui.mode != HIDE) {
+        if (keycode == 0x02) { // D key
+            log::info("Ctrl+D detected in event tap");
+            manager.ui.ctrl_d_pressed = true;
+            return event;
+        }
+        if (keycode == 0x20) { // U key
+            log::info("Ctrl+U detected in event tap");
+            manager.ui.ctrl_u_pressed = true;
+            return event;
+        }
+    }
+    
     // Ctrl+Shift+1-9 for quicklist (only when app is hidden)
     if ((control || command) && shift && keycode >= 0x12 && keycode <= 0x1C && manager.ui.mode == HIDE) {
         int num = 0;

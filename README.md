@@ -14,6 +14,8 @@ Clipboard manager for macOS.
 | Key | Action |
 |-----|--------|
 | `↑/↓` or `j/k` | Navigate clips |
+| `Ctrl+d` | Page down (jump 8 items) |
+| `Ctrl+u` | Page up (jump 8 items) |
 | `Tab` | Switch between tabs (All Clips → Favorites → Quicklist) |
 | `h` | Toggle help page |
 | `q` or `Esc` | Quit/Close window |

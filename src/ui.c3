@@ -31,6 +31,8 @@ struct UIState {
     Tab active_tab;
     bool delete_pending;
     double last_delete_press_time;
+    bool ctrl_d_pressed;
+    bool ctrl_u_pressed;
 }
 
 enum Mode {
