@@ -41,6 +41,65 @@ fn Manager init(Config config) {
     return manager;
 }
 
+// Helper: Check if entry should be visible based on current filters
+fn bool Manager.is_entry_visible(&self, StoredEntry entry) {
+    if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+        return false;
+    }
+    if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
+        return false;
+    }
+    if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
+        String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
+        String text_lower = entry.text.to_lower_tcopy();
+        if (!text_lower.contains(query_lower)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper: Count visible entries
+fn int Manager.count_visible_entries(&self) {
+    int count = 0;
+    foreach (entry : self.history) {
+        if (self.is_entry_visible(entry)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// Helper: Get entry at visual index (accounting for filters)
+fn StoredEntry? Manager.get_entry_at_visual_index(&self, int visual_idx) {
+    int current_idx = 0;
+    foreach (entry : self.history) {
+        if (!self.is_entry_visible(entry)) {
+            continue;
+        }
+        if (current_idx == visual_idx) {
+            return entry;
+        }
+        current_idx++;
+    }
+    return REDACTED?;
+}
+
+// Helper: Get actual index from visual index
+fn int Manager.get_actual_index_from_visual(&self, int visual_idx) {
+    int current_visual = 0;
+    foreach (i, entry : self.history) {
+        if (!self.is_entry_visible(entry)) {
+            continue;
+        }
+        if (current_visual == visual_idx) {
+            return (int)i;
+        }
+        current_visual++;
+    }
+    return -1;
+}
+
 fn void Manager.run(&self) {
     int last_clipboard_count = self.get_clipboard_count();
     
@@ -123,58 +182,44 @@ fn void Manager.handle_input(&self) {
     self.handle_mode_switching();
 }
 
+fn void Manager.handle_page_scroll(&self, int visible_count, bool is_down) {
+    const int MAX_VISIBLE_ITEMS = 16;
+    const int ITEM_SPACING = 30;
+    const int PAGE_JUMP = MAX_VISIBLE_ITEMS / 2;
+    
+    if (visible_count == 0) return;
+    
+    if (is_down) {
+        self.ui.selected_idx = math::min(self.ui.selected_idx + PAGE_JUMP, visible_count - 1);
+    } else {
+        self.ui.selected_idx = math::max(self.ui.selected_idx - PAGE_JUMP, 0);
+    }
+    
+    int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
+    if (is_down && self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS - 1) {
+        self.ui.scroll_pos.y = (float)((self.ui.selected_idx - MAX_VISIBLE_ITEMS + 2) * ITEM_SPACING);
+    } else if (!is_down && self.ui.selected_idx < scroll_offset) {
+        self.ui.scroll_pos.y = (float)(self.ui.selected_idx * ITEM_SPACING);
+    }
+}
+
 fn void Manager.handle_navigation(&self) {
     const int MAX_VISIBLE_ITEMS = 16;
     const int ITEM_SPACING = 30;
     const int KEY_REPEAT_INITIAL_DELAY = 20;
     const int KEY_REPEAT_DELAY = 3;
     
-    // Count visible items based on current filter
-    int visible_count = 0;
-    foreach (entry : self.history) {
-        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
-            continue;
-        }
-        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
-            continue;
-        }
-        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-            String text_lower = entry.text.to_lower_tcopy();
-            if (!text_lower.contains(query_lower)) {
-                continue;
-            }
-        }
-        visible_count++;
-    }
+    int visible_count = self.count_visible_entries();
     
     // Page scrolling with Ctrl+D and Ctrl+U (detected by event tap)
     if (self.ui.ctrl_d_pressed) {
-        log::info("Ctrl+D page down: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
         self.ui.ctrl_d_pressed = false;
-        if (visible_count > 0) {
-            int page_jump = MAX_VISIBLE_ITEMS / 2;
-            self.ui.selected_idx = math::min(self.ui.selected_idx + page_jump, visible_count - 1);
-            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-            if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS - 1) {
-                self.ui.scroll_pos.y = (float)((self.ui.selected_idx - MAX_VISIBLE_ITEMS + 2) * ITEM_SPACING);
-            }
-            log::info("After Ctrl+D: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
-        }
+        self.handle_page_scroll(visible_count, true);
         return;
     }
     if (self.ui.ctrl_u_pressed) {
-        log::info("Ctrl+U page up: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
         self.ui.ctrl_u_pressed = false;
-        if (visible_count > 0) {
-            int page_jump = MAX_VISIBLE_ITEMS / 2;
-            self.ui.selected_idx = math::max(self.ui.selected_idx - page_jump, 0);
-            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-            if (self.ui.selected_idx < scroll_offset) {
-                self.ui.scroll_pos.y = (float)(self.ui.selected_idx * ITEM_SPACING);
-            }
-            log::info("After Ctrl+U: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
-        }
+        self.handle_page_scroll(visible_count, false);
         return;
     }
     
@@ -183,45 +228,6 @@ fn void Manager.handle_navigation(&self) {
     
     if (!key_down && !key_up) {
         self.ui.key_repeat_counter = 0;
-        return;
-    }
-    
-    // Page scrolling with Ctrl+D and Ctrl+U
-    bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
-    bool d_pressed = rl::isKeyPressed(rl::KEY_D);
-    bool u_pressed = rl::isKeyPressed(rl::KEY_U);
-    
-    if (d_pressed) {
-        log::debug("D pressed, ctrl=%s", ctrl);
-    }
-    if (u_pressed) {
-        log::debug("U pressed, ctrl=%s", ctrl);
-    }
-    
-    if (ctrl && d_pressed) {
-        log::info("Ctrl+D page down: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
-        if (visible_count > 0) {
-            int page_jump = MAX_VISIBLE_ITEMS / 2;
-            self.ui.selected_idx = math::min(self.ui.selected_idx + page_jump, visible_count - 1);
-            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-            if (self.ui.selected_idx >= scroll_offset + MAX_VISIBLE_ITEMS - 1) {
-                self.ui.scroll_pos.y = (float)((self.ui.selected_idx - MAX_VISIBLE_ITEMS + 2) * ITEM_SPACING);
-            }
-            log::info("After Ctrl+D: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
-        }
-        return;
-    }
-    if (ctrl && u_pressed) {
-        log::info("Ctrl+U page up: visible_count=%d, current_idx=%d", visible_count, self.ui.selected_idx);
-        if (visible_count > 0) {
-            int page_jump = MAX_VISIBLE_ITEMS / 2;
-            self.ui.selected_idx = math::max(self.ui.selected_idx - page_jump, 0);
-            int scroll_offset = (int)(self.ui.scroll_pos.y / ITEM_SPACING);
-            if (self.ui.selected_idx < scroll_offset) {
-                self.ui.scroll_pos.y = (float)(self.ui.selected_idx * ITEM_SPACING);
-            }
-            log::info("After Ctrl+U: new_idx=%d, scroll_y=%f", self.ui.selected_idx, self.ui.scroll_pos.y);
-        }
         return;
     }
     
@@ -313,27 +319,7 @@ fn void Manager.handle_selection(&self) {
 }
 
 fn StoredEntry? Manager.get_selected_entry(&self) {
-    int visual_idx = 0;
-    foreach (entry : self.history) {
-        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
-            continue;
-        }
-        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
-            continue;
-        }
-        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-            String text_lower = entry.text.to_lower_tcopy();
-            if (!text_lower.contains(query_lower)) {
-                continue;
-            }
-        }
-        if (visual_idx == self.ui.selected_idx) {
-            return entry;
-        }
-        visual_idx++;
-    }
-    return REDACTED?;
+    return self.get_entry_at_visual_index(self.ui.selected_idx);
 }
 
 fn void Manager.handle_text_input(&self) {
@@ -417,31 +403,11 @@ fn void Manager.handle_tab_switching(&self) {
 
 fn void Manager.handle_favorite_toggle(&self) {
     if (rl::isKeyPressed(rl::KEY_F) && self.history.len() > 0) {
-        // Find actual index based on visual index
-        int visual_idx = 0;
-        int actual_idx = -1;
-        foreach (i, entry : self.history) {
-            if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
-                continue;
-            }
-            if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-                String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-                String text_lower = entry.text.to_lower_tcopy();
-                if (!text_lower.contains(query_lower)) {
-                    continue;
-                }
-            }
-            if (visual_idx == self.ui.selected_idx) {
-                actual_idx = (int)i;
-                break;
-            }
-            visual_idx++;
-        }
-        
+        int actual_idx = self.get_actual_index_from_visual(self.ui.selected_idx);
         if (actual_idx >= 0) {
             self.history[actual_idx].is_favorite = !self.history[actual_idx].is_favorite;
             storage::save_to_file(&self.config, &self.history);
-            log::info("clip %s (index %s)", self.history[actual_idx].is_favorite ? "favorited" : "unfavorited", actual_idx);
+            log::info("clip %s (index %d)", self.history[actual_idx].is_favorite ? "favorited" : "unfavorited", actual_idx);
         }
     }
 }
@@ -453,29 +419,7 @@ fn void Manager.handle_quicklist_toggle(&self) {
     for (int num = 1; num <= 9; num++) {
         KeyboardKey key = (KeyboardKey)((int)rl::KEY_ONE + (num - 1));
         if (rl::isKeyPressed(key)) {
-            // Find actual index based on visual index
-            int visual_idx = 0;
-            int actual_idx = -1;
-            foreach (i, entry : self.history) {
-                if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
-                    continue;
-                }
-                if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
-                    continue;
-                }
-                if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-                    String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-                    String text_lower = entry.text.to_lower_tcopy();
-                    if (!text_lower.contains(query_lower)) {
-                        continue;
-                    }
-                }
-                if (visual_idx == self.ui.selected_idx) {
-                    actual_idx = (int)i;
-                    break;
-                }
-                visual_idx++;
-            }
+            int actual_idx = self.get_actual_index_from_visual(self.ui.selected_idx);
             
             if (actual_idx >= 0) {
                 if (self.history[actual_idx].quicklist_number == num) {
@@ -597,30 +541,7 @@ fn void Manager.add(&self, String text, String source_app) {
 fn void Manager.remove_selected(&self) {
     if (self.history.len() == 0) return;
     
-    // Find actual index based on visual index
-    int visual_idx = 0;
-    int actual_idx = -1;
-    foreach (i, entry : self.history) {
-        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
-            continue;
-        }
-        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
-            continue;
-        }
-        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-            String text_lower = entry.text.to_lower_tcopy();
-            if (!text_lower.contains(query_lower)) {
-                continue;
-            }
-        }
-        if (visual_idx == self.ui.selected_idx) {
-            actual_idx = (int)i;
-            break;
-        }
-        visual_idx++;
-    }
-    
+    int actual_idx = self.get_actual_index_from_visual(self.ui.selected_idx);
     if (actual_idx < 0) return;
     
     StoredEntry? entry = self.history.get(actual_idx);
@@ -628,25 +549,8 @@ fn void Manager.remove_selected(&self) {
     self.history.remove_at(actual_idx);
     entry.text.free(mem);
     
-    // Recount visible items after removal
-    int visible_count = 0;
-    foreach (e : self.history) {
-        if (self.ui.active_tab == FAVORITES && !e.is_favorite) {
-            continue;
-        }
-        if (self.ui.active_tab == QUICKLIST && e.quicklist_number == 0) {
-            continue;
-        }
-        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-            String text_lower = e.text.to_lower_tcopy();
-            if (!text_lower.contains(query_lower)) {
-                continue;
-            }
-        }
-        visible_count++;
-    }
-    
+    // Adjust selected index if needed
+    int visible_count = self.count_visible_entries();
     if (visible_count == 0) {
         self.ui.selected_idx = 0;
     } else if (self.ui.selected_idx >= visible_count) {
@@ -824,20 +728,8 @@ fn void Manager.draw_clip_list(&self) {
     int visual_idx; 
     quicksort(&self.history);
     foreach (entry : self.history) {
-        // Filter by tab
-        if (self.ui.active_tab == FAVORITES && !entry.is_favorite) {
+        if (!self.is_entry_visible(entry)) {
             continue;
-        }
-        if (self.ui.active_tab == QUICKLIST && entry.quicklist_number == 0) {
-            continue;
-        }
-        
-        if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
-            String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
-            String text_lower = entry.text.to_lower_tcopy();
-            if (!text_lower.contains(query_lower)) {
-                continue;  // Skip entries that don't match
-            }
         }
         
         float y_pos = 50 + tabs_height + search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
