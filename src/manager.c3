@@ -20,6 +20,16 @@ const int HEADER_HEIGHT = 50;
 const int FOOTER_HEIGHT = 40;
 const int TAB_HEIGHT = 30;
 
+// Clip item rendering constants
+const int CLIP_PADDING = 20;
+const int CLIP_HEIGHT = 25;
+const int CLIP_FONT_SIZE = 20;
+const int CLIP_TEXT_PADDING = 25;
+const int CLIP_MAX_TEXT_LENGTH = 84;
+const float BADGE_WIDTH = 50;
+const float FAVORITE_ICON_OFFSET = -15;
+const float QUICKLIST_SPACING = 10;
+
 struct Manager {
     Clipboard cp;
     List{StoredEntry} history;
@@ -710,94 +720,122 @@ fn void Manager.draw_tabs(&self) {
     rl::drawTextEx(self.font, quick_txt, quick_pos, 16, 0f, quick_text);
 }
 
+fn String Manager.truncate_clip_text(&self, String text) {
+    String result = text;
+    if (try newline_pos = result.index_of_char('\n')) {
+        result = result[..newline_pos];
+    }
+    if (result.len > CLIP_MAX_TEXT_LENGTH) {
+        result = result[..CLIP_MAX_TEXT_LENGTH];
+    }
+    return result;
+}
+
+fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected) {
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    rl::Color rec_color = is_selected ? ui::COLOR_BODY : ui::COLOR_BG;
+    rl::Rectangle rec = { CLIP_PADDING, y_pos, rec_width, CLIP_HEIGHT };
+    rl::drawRectangleRounded(rec: rec, roundness: 0.5, segments: 12, color: rec_color);
+}
+
+fn void Manager.draw_favorite_indicator(&self, float y_pos, bool is_favorite) {
+    if (!is_favorite) return;
+    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    rl::drawTextEx(
+        self.font, 
+        "★".zstr_tcopy(), 
+        {(float)CLIP_TEXT_PADDING + FAVORITE_ICON_OFFSET, y_pos + font_y_offset + 3}, 
+        (float)CLIP_FONT_SIZE - 5, 
+        0f, 
+        ui::COLOR_GOLD
+    );
+}
+
+fn void Manager.draw_clip_text(&self, String text, float y_pos, bool is_selected) {
+    String display_text = self.truncate_clip_text(text);
+    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    rl::Color text_color = is_selected ? ui::COLOR_TITLE : ui::COLOR_TEXT;
+    rl::drawTextEx(
+        self.font, 
+        display_text.zstr_tcopy(), 
+        {CLIP_TEXT_PADDING, y_pos + font_y_offset}, 
+        CLIP_FONT_SIZE, 
+        0f, 
+        text_color
+    );
+}
+
+fn void Manager.draw_clip_badge(&self, int text_length, float y_pos, bool is_selected) {
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
+    float badge_y = y_pos;
+    
+    ZString count_str = string::tformat_zstr("%d", text_length);
+    rl::Color badge_bg = ui::COLOR_BODY;
+    rl::Color badge_border = is_selected ? ui::COLOR_BADGE_LINE : ui::COLOR_BODY;
+    
+    rl::Rectangle badge_rec = { badge_x, badge_y, BADGE_WIDTH, CLIP_HEIGHT };
+    rl::drawRectangleRounded(rec: badge_rec, roundness: 0.5, segments: 12, color: badge_bg);
+    rl::drawRectangleRoundedLinesEx(badge_rec, 0.5, 24, 1.0, badge_border);
+    
+    rl::Vector2 count_size = rl::measureTextEx(self.font, count_str, 12, 0);
+    rl::Vector2 count_pos = {
+        badge_x + (BADGE_WIDTH - count_size.x) / 2f,
+        badge_y + (CLIP_HEIGHT - count_size.y) / 2f,
+    };
+    rl::drawTextEx(self.font, count_str, count_pos, 14, 0, ui::COLOR_BADGE_TEXT);
+}
+
+fn void Manager.draw_quicklist_number(&self, int quicklist_number, float y_pos) {
+    if (quicklist_number == 0) return;
+    
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
+    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    
+    ZString num_str = string::tformat_zstr("%d", quicklist_number);
+    rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
+    float num_x = badge_x - num_size.x - QUICKLIST_SPACING;
+    rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, 16, 0f, ui::COLOR_PURPLE);
+}
+
 fn void Manager.draw_clip_list(&self) {
-    int spacing = 30;
-    int rec_padding = 20;
-    int rec_height = 25;
-    int rec_width = ui::SCREEN_WIDTH - (rec_padding * 2);
-
-    int max_text_len = 84;
-    int font_size = 20;
-    int font_padding = 25;
-    float font_y_offset = (rec_height - (float)font_size) / 2f;
-
-    float badge_w = 50;
-    float badge_h = rec_height;
-    float badge_y_offset = (rec_height - (float)badge_h) / 2f;
-    int badge_padding = rec_padding - 5;
     float search_bar_height = self.ui.mode == SEARCH ? 30 : 0;
-    float tabs_height = 30;
-
-    int visual_idx; 
+    float content_start = HEADER_HEIGHT + TAB_HEIGHT + search_bar_height;
+    
+    int visual_idx = 0;
     quicksort(&self.history);
+    
     foreach (entry : self.history) {
         if (!self.is_entry_visible(entry)) {
             continue;
         }
         
-        float y_pos = 50 + tabs_height + search_bar_height + ((float)visual_idx * spacing) - self.ui.scroll_pos.y;
+        float y_pos = content_start + ((float)visual_idx * ITEM_SPACING) - self.ui.scroll_pos.y;
+        bool is_selected = visual_idx == self.ui.selected_idx;
         
-        // Skip rendering items outside visible area (footer starts at ~570)
-        if (y_pos < 75 || y_pos + rec_height > ui::SCREEN_HEIGHT - 40) {
+        // Skip rendering items outside visible area (but still increment visual_idx)
+        float visible_area_start = content_start;
+        float visible_area_end = ui::SCREEN_HEIGHT - FOOTER_HEIGHT;
+        if (y_pos + CLIP_HEIGHT < visible_area_start || y_pos > visible_area_end) {
             visual_idx++;
             continue;
         }
         
-        bool is_selected = visual_idx == self.ui.selected_idx;
-
-        // rectangle
-        rl::Color rec_color = is_selected ? ui::COLOR_BODY : ui::COLOR_BG;
-        rl::Rectangle rec = { rec_padding, y_pos, rec_width, rec_height };
-        rl::drawRectangleRounded(rec: rec, roundness: 0.5, segments: 12, color: rec_color); 
-
-        // favorite indicator
-        if (entry.is_favorite) {
-            rl::drawTextEx(self.font, "★".zstr_tcopy(), {(float)font_padding - 15, y_pos + font_y_offset + 3}, (float)font_size - 5, 0f, ui::COLOR_GOLD);
-        }
-
-        // text
-        String text = entry.text;
-        if(try newline_pos = text.index_of_char('\n')) {
-            text = text[..newline_pos];
-        }
-        if (text.len > max_text_len) {
-            text = text[..max_text_len];
-        }
-        rl::Color text_color = is_selected ? ui::COLOR_TITLE : ui::COLOR_TEXT;
-        rl::drawTextEx(self.font, text.zstr_tcopy(), {font_padding, y_pos + font_y_offset}, font_size, 0f, text_color);
-
-        // badge
-        float badge_x = (float)rec_padding + rec_width - badge_w;
-        float badge_y = (float)y_pos + badge_y_offset;
-        ZString count_str = string::tformat_zstr("%d", entry.text.len);
-        rl::Color badge_bg = ui::COLOR_BODY;
-        rl::Color badge_corner_color = is_selected ? ui::COLOR_BADGE_LINE : ui::COLOR_BODY;
-        rl::Rectangle badge_rec = { badge_x, badge_y, badge_w, badge_h };
-        rl::drawRectangleRounded(rec: badge_rec, roundness: 0.5, segments: 12, color: badge_bg); 
-        rl::drawRectangleRoundedLinesEx(badge_rec, 0.5, 24, 1.0, badge_corner_color);
-        rl::Vector2 count_size = rl::measureTextEx(self.font, count_str, 12, 0);
-        rl::Vector2 count_pos = {
-            badge_x + (badge_w - count_size.x) / 2f,
-            badge_y + (badge_h - count_size.y) / 2f,
-        };
-        rl::drawTextEx(self.font, count_str, count_pos, 14, 0, ui::COLOR_BADGE_TEXT);
+        self.draw_clip_background(y_pos, is_selected);
+        self.draw_favorite_indicator(y_pos, entry.is_favorite);
+        self.draw_clip_text(entry.text, y_pos, is_selected);
+        self.draw_clip_badge((int)entry.text.len, y_pos, is_selected);
+        self.draw_quicklist_number(entry.quicklist_number, y_pos);
         
-        // quicklist number indicator (left of badge)
-        if (entry.quicklist_number > 0) {
-            ZString num_str = string::tformat_zstr("%d", entry.quicklist_number);
-            rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
-            float num_x = badge_x - num_size.x - 10;
-            rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, 16, 0f, ui::COLOR_PURPLE);
-        }
-
-        // timestamp footer
+        // Timestamp in footer for selected item
         if (is_selected) {
             ZString timestamp = string::tformat_zstr("%s", entry.timestamp);
             rl::Vector2 timestamp_size = rl::measureTextEx(self.font, timestamp, 16, 0);
             float timestamp_x = (ui::SCREEN_WIDTH - timestamp_size.x) - 25;
             rl::drawTextEx(self.font, timestamp, {timestamp_x, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
         }
-
+        
         visual_idx++;
     }
 }
