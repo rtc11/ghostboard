@@ -1250,7 +1250,6 @@ fn List{HelpSection} get_help_sections() {
         {"G", "Jump to bottom"},
         {"Tab", "Switch between tabs"},
     });
-    sections.push({.title = "Navigation:", .items = nav_items});
     
     List{HelpItem} action_items;
     action_items.push_all({
@@ -1263,8 +1262,6 @@ fn List{HelpSection} get_help_sections() {
         {"Delete", "Delete clip immediately"},
         {"/", "Search clips"},
     });
-    sections.push({.title = "Actions:", .items = action_items});
-    
     List{HelpItem} visual_items;
     visual_items.push_all({
         {"Shift+V", "Enter visual selection"},
@@ -1273,14 +1270,12 @@ fn List{HelpSection} get_help_sections() {
         {"d or Delete", "Delete all selected"},
         {"q or Esc", "Exit visual mode"},
     });
-    sections.push({.title = "Visual Mode:", .items = visual_items});
     
     List{HelpItem} global_items;
     global_items.push_all({
         {"Ctrl+Shift+V", "Open GhostBoard"},
         {"Ctrl+Shift+1-9", "Paste quicklist clip"},
     });
-    sections.push({.title = "Global Shortcuts:", .items = global_items});
     
     List{HelpItem} tab_items;
     tab_items.push_all({
@@ -1288,8 +1283,12 @@ fn List{HelpSection} get_help_sections() {
         {"Favorites", "Favorited clips only"},
         {"Quicklist", "Numbered clips (1-9)"},
     });
+
+    sections.push({.title = "Global Shortcuts:", .items = global_items});
+    sections.push({.title = "Visual Mode:", .items = visual_items});
     sections.push({.title = "Tabs:", .items = tab_items});
-    
+    sections.push({.title = "Navigation:", .items = nav_items});
+    sections.push({.title = "Actions:", .items = action_items});
     return sections;
 }
 
@@ -1330,21 +1329,48 @@ fn void Manager.render_help(&self) {
     float line_height = 28;
     float section_spacing = 15;
     float indent = 30;
-    float key_x = 50 + indent;
-    float desc_x = 250;
+    
+    // Two-column layout
+    float col1_x = 50;
+    float col2_x = ui::SCREEN_WIDTH / 2 + 10;
+    float col_width = ui::SCREEN_WIDTH / 2 - 70;
+    float key_offset = indent;
+    float desc_offset = 200;
     
     List{HelpSection} sections = get_help_sections();
-    foreach (section : sections) {
-        rl::drawTextEx(self.font, section.title, {50, y_pos}, 20, 0f, ui::COLOR_GOLD);
-        y_pos += line_height;
+    usz total_sections = sections.len();
+    usz sections_per_col = (total_sections + 1) / 2;  // Split sections between columns
+    
+    // Draw left column
+    float left_y = y_pos;
+    for (int i = 0; i < sections_per_col && i < total_sections; i++) {
+        HelpSection section = sections[i];
+        rl::drawTextEx(self.font, section.title, {col1_x, left_y}, 20, 0f, ui::COLOR_GOLD);
+        left_y += line_height;
         
         foreach (item : section.items) {
-            rl::drawTextEx(self.font, item.key, {key_x, y_pos}, 18, 0f, ui::COLOR_PURPLE);
-            rl::drawTextEx(self.font, item.description, {desc_x, y_pos}, 18, 0f, ui::COLOR_TEXT);
-            y_pos += line_height;
+            rl::drawTextEx(self.font, item.key, {col1_x + key_offset, left_y}, 18, 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, item.description, {col1_x + desc_offset, left_y}, 18, 0f, ui::COLOR_TEXT);
+            left_y += line_height;
         }
         
-        y_pos += section_spacing;
+        left_y += section_spacing;
+    }
+    
+    // Draw right column
+    float right_y = y_pos;
+    for (usz i = sections_per_col; i < total_sections; i++) {
+        HelpSection section = sections[i];
+        rl::drawTextEx(self.font, section.title, {col2_x, right_y}, 20, 0f, ui::COLOR_GOLD);
+        right_y += line_height;
+        
+        foreach (item : section.items) {
+            rl::drawTextEx(self.font, item.key, {col2_x + key_offset, right_y}, 18, 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, item.description, {col2_x + desc_offset, right_y}, 18, 0f, ui::COLOR_TEXT);
+            right_y += line_height;
+        }
+        
+        right_y += section_spacing;
     }
     
     rl::endScissorMode();
