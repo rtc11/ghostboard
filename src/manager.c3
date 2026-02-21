@@ -1155,17 +1155,45 @@ fn void Manager.render_inspect(&self) {
         
         int text_padding = 20;
         rl::Vector2 scale = rl::getWindowScaleDPI();
+        
+        // Calculate line number column width
+        String[] lines = selected.text.tsplit("\n");
+        int line_count = lines.len;
+        ZString max_line_num = string::tformat_zstr("%d", line_count);
+        rl::Vector2 line_num_size = rl::measureTextEx(self.font, max_line_num, 18f, 1f);
+        float line_num_width = line_num_size.x + 20;  // Extra padding
+        
         rl::beginScissorMode(
             x: (20 + text_padding) * (int)scale.x, 
             y: (50 + text_padding) * (int)scale.y,
             width: (ui::SCREEN_WIDTH - 40 - text_padding * 2) * (int)scale.x,
             height: (ui::SCREEN_HEIGHT - 80 - text_padding * 2) * (int)scale.y,
         );
-        rl::Vector2 pos = {
-            20 + (float) text_padding - self.ui.scroll_pos.x,
-            50 + (float) text_padding - self.ui.scroll_pos.y
-        }; 
-        rl::drawTextEx(self.font, selected.text.zstr_tcopy(), pos, 18f, 1f, ui::COLOR_TEXT);
+        
+        float line_height = 22f;  // Height per line
+        float start_y = 50 + (float)text_padding - self.ui.scroll_pos.y;
+        float start_x = 20 + (float)text_padding - self.ui.scroll_pos.x;
+        
+        // Draw each line with line number
+        for (int i = 0; i < lines.len; i++) {
+            float line_y = start_y + (i * line_height);
+            
+            // Draw line number (right-aligned in the gutter)
+            ZString line_num = string::tformat_zstr("%d", i + 1);
+            rl::Vector2 num_size = rl::measureTextEx(self.font, line_num, 18f, 1f);
+            float num_x = start_x + line_num_width - num_size.x - 10;
+            rl::drawTextEx(self.font, line_num, {num_x, line_y}, 18f, 1f, ui::COLOR_FOOTER);
+            
+            // Draw separator
+            rl::drawLine((int)(start_x + line_num_width - 5), (int)line_y, 
+                        (int)(start_x + line_num_width - 5), (int)(line_y + line_height), 
+                        ui::COLOR_FOOTER);
+            
+            // Draw line text
+            float text_x = start_x + line_num_width + 5;
+            rl::drawTextEx(self.font, lines[i].zstr_tcopy(), {text_x, line_y}, 18f, 1f, ui::COLOR_TEXT);
+        }
+        
         rl::endScissorMode();
 
         // footer with hit count, source app, and full date
