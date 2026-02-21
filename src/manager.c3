@@ -277,7 +277,6 @@ fn void Manager.handle_navigation(&self) {
         }
     }
     
-    // Page scrolling with Ctrl+D and Ctrl+U (detected by event tap)
     if (self.ui.ctrl_d_pressed) {
         self.ui.ctrl_d_pressed = false;
         self.handle_page_scroll(visible_count, true);
@@ -293,7 +292,6 @@ fn void Manager.handle_navigation(&self) {
     bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
     
     if (!key_down && !key_up) {
-        // Don't reset counter if backspace is being held (for text input repeat)
         if (!rl::isKeyDown(rl::KEY_BACKSPACE)) {
             self.ui.key_repeat_counter = 0;
         }
@@ -334,7 +332,6 @@ fn void Manager.handle_navigation(&self) {
         self.ui.key_repeat_counter++;
     }
     
-    // Mouse wheel scrolling
     float wheel = rl::getMouseWheelMove();
     if (wheel != 0) {
         self.ui.scroll_pos.y -= wheel * 30.0f;
@@ -448,7 +445,6 @@ fn void Manager.handle_text_input(&self) {
 
 fn void Manager.handle_mode_switching(&self) {
     if (rl::isKeyPressed(rl::KEY_ESCAPE) || rl::isKeyPressed(rl::KEY_Q)) {
-        // Exit visual mode if active
         if (self.ui.visual_mode) {
             self.ui.visual_mode = false;
             log::info("exited visual mode");
@@ -532,8 +528,6 @@ fn void Manager.handle_favorite_toggle(&self) {
 
 fn void Manager.handle_quicklist_toggle(&self) {
     if (self.history.len() == 0) return;
-    
-    // Check for number keys 1-9
     for (int num = 1; num <= 9; num++) {
         KeyboardKey key = (KeyboardKey)((int)rl::KEY_ONE + (num - 1));
         if (rl::isKeyPressed(key)) {
@@ -544,7 +538,6 @@ fn void Manager.handle_quicklist_toggle(&self) {
                     self.history[actual_idx].quicklist_number = 0;
                     log::info("removed clip from quicklist slot %d", num);
                 } else {
-                    // Remove the number from any other clip first
                     for (int j = 0; j < self.history.len(); j++) {
                         if (self.history[j].quicklist_number == num) {
                             self.history[j].quicklist_number = 0;
@@ -567,8 +560,10 @@ fn void Manager.handle_list_input(&self) {
     self.handle_selection();
     self.handle_favorite_toggle();
     self.handle_quicklist_toggle();
-    
-    // 'n' to add/edit note
+    self.handle_note();
+}
+
+fn void Manager.handle_note(&self) {
     if (rl::isKeyPressed(rl::KEY_N) && self.history.len() > 0) {
         StoredEntry? entry = self.get_selected_entry();
         if (try entry) {
@@ -587,7 +582,6 @@ fn void Manager.handle_search_input(&self) {
 }
 
 fn void Manager.handle_inspect_input(&self) {
-    // Page scrolling with Ctrl+D and Ctrl+U
     bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
     if (ctrl && rl::isKeyPressed(rl::KEY_D)) {
         self.ui.scroll_pos.y += 200.0f;
@@ -599,7 +593,6 @@ fn void Manager.handle_inspect_input(&self) {
         return;
     }
     
-    // Vertical scrolling
     if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
         self.ui.scroll_pos.y += 10.0f;
     }
@@ -608,7 +601,6 @@ fn void Manager.handle_inspect_input(&self) {
         if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
     }
     
-    // Horizontal scrolling
     if (rl::isKeyDown(rl::KEY_RIGHT) || rl::isKeyDown(rl::KEY_L)) {
         self.ui.scroll_pos.x += 10.0f;
     }
@@ -617,7 +609,6 @@ fn void Manager.handle_inspect_input(&self) {
         if (self.ui.scroll_pos.x < 0) self.ui.scroll_pos.x = 0;
     }
     
-    // Mouse wheel scrolling
     float wheel = rl::getMouseWheelMove();
     if (wheel != 0) {
         self.ui.scroll_pos.y -= wheel * 30.0f;
@@ -626,7 +617,6 @@ fn void Manager.handle_inspect_input(&self) {
 }
 
 fn void Manager.handle_help_input(&self) {
-    // Page scrolling with Ctrl+D and Ctrl+U
     bool ctrl = rl::isKeyDown(rl::KEY_LEFT_CONTROL) || rl::isKeyDown(rl::KEY_RIGHT_CONTROL);
     if (ctrl && rl::isKeyPressed(rl::KEY_D)) {
         self.ui.scroll_pos.y += 200.0f;
@@ -638,7 +628,6 @@ fn void Manager.handle_help_input(&self) {
         return;
     }
     
-    // Vertical scrolling
     if (rl::isKeyDown(rl::KEY_DOWN) || rl::isKeyDown(rl::KEY_J)) {
         self.ui.scroll_pos.y += 10.0f;
     }
@@ -647,7 +636,6 @@ fn void Manager.handle_help_input(&self) {
         if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
     }
     
-    // Mouse wheel scrolling
     float wheel = rl::getMouseWheelMove();
     if (wheel != 0) {
         self.ui.scroll_pos.y -= wheel * 30.0f;
@@ -857,7 +845,6 @@ fn void Manager.draw_header(&self) {
     rl::drawRectangleRounded(header_rec, 0.5, 12, ui::COLOR_BODY);
     rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, ui::COLOR_TITLE);
 
-    // version number
     ZString version_txt = "v0.1.0".zstr_tcopy();
     float version_font_size = 14f;
     rl::Vector2 version_size = rl::measureTextEx(self.font, version_txt, version_font_size, 0f);
@@ -876,63 +863,82 @@ fn void Manager.draw_search_bar(&self) {
     }
 }
 
+struct Tab {
+    ZString name;
+    float y;
+    float height;
+    float width;
+    float spacing;
+    float total_width;
+    float x_start;
+}
+
 fn void Manager.draw_tabs(&self) {
-    float tab_y = 43;
-    float tab_height = 25;
-    float tab_width = 100;
-    float tab_spacing = 10;
-    float total_width = tab_width * 3 + tab_spacing * 2;
-    float tab_x_start = (ui::SCREEN_WIDTH - total_width) / 2f;
-    
-    // All Clips tab
-    rl::Rectangle all_tab = { tab_x_start, tab_y, tab_width, tab_height };
+    Tab tab = {
+        .y = 43,
+        .height = 25,
+        .width = 100,
+        .spacing = 10,
+    };
+    tab.total_width = tab.width * 3 + tab.spacing * 2;
+    tab.x_start = (ui::SCREEN_WIDTH - tab.total_width) / 2f;
+    tab.name = "All Clips";
+    self.draw_tab_all_clips(&tab);
+    tab.name = "Favorites";
+    self.draw_tab_favorites(&tab);
+    tab.name = "Quicklist";
+    self.draw_tab_quicklist(&tab);
+}
+
+fn void Manager.draw_tab_all_clips(&self, Tab* tab) {
+    rl::Rectangle all_tab = { tab.x_start, tab.y, tab.width, tab.height };
     rl::Color all_bg = self.ui.active_tab == ALL_CLIPS ? ui::COLOR_BODY : ui::COLOR_BG;
     rl::Color all_text = self.ui.active_tab == ALL_CLIPS ? ui::COLOR_TITLE : ui::COLOR_TEXT;
     rl::drawRectangleRounded(all_tab, 0.5, 12, all_bg);
     if (self.ui.active_tab == ALL_CLIPS) {
         rl::drawRectangleRoundedLinesEx(all_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
     }
-    ZString all_txt = "All Clips".zstr_tcopy();
-    rl::Vector2 all_size = rl::measureTextEx(self.font, all_txt, 16, 0);
+    rl::Vector2 all_size = rl::measureTextEx(self.font, tab.name, 16, 0);
     rl::Vector2 all_pos = {
-        tab_x_start + (tab_width - all_size.x) / 2f,
-        tab_y + (tab_height - all_size.y) / 2f
+        tab.x_start + (tab.width - all_size.x) / 2f,
+        tab.y + (tab.height - all_size.y) / 2f
     };
-    rl::drawTextEx(self.font, all_txt, all_pos, 16, 0f, all_text);
-    
-    // Favorites tab
-    float fav_x = tab_x_start + tab_width + tab_spacing;
-    rl::Rectangle fav_tab = { fav_x, tab_y, tab_width, tab_height };
+    rl::drawTextEx(self.font, tab.name, all_pos, 16, 0f, all_text);
+}
+
+fn void Manager.draw_tab_favorites(&self, Tab* tab) {
+    float fav_x = tab.x_start + tab.width + tab.spacing;
+    rl::Rectangle fav_tab = { fav_x, tab.y, tab.width, tab.height };
     rl::Color fav_bg = self.ui.active_tab == FAVORITES ? ui::COLOR_BODY : ui::COLOR_BG;
     rl::Color fav_text = self.ui.active_tab == FAVORITES ? ui::COLOR_TITLE : ui::COLOR_TEXT;
     rl::drawRectangleRounded(fav_tab, 0.5, 12, fav_bg);
     if (self.ui.active_tab == FAVORITES) {
         rl::drawRectangleRoundedLinesEx(fav_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
     }
-    ZString fav_txt = "Favorites".zstr_tcopy();
-    rl::Vector2 fav_size = rl::measureTextEx(self.font, fav_txt, 16, 0);
+    rl::Vector2 fav_size = rl::measureTextEx(self.font, tab.name, 16, 0);
     rl::Vector2 fav_pos = {
-        fav_x + (tab_width - fav_size.x) / 2f,
-        tab_y + (tab_height - fav_size.y) / 2f
+        fav_x + (tab.width - fav_size.x) / 2f,
+        tab.y + (tab.height - fav_size.y) / 2f
     };
-    rl::drawTextEx(self.font, fav_txt, fav_pos, 16, 0f, fav_text);
-    
-    // Quicklist tab
-    float quick_x = fav_x + tab_width + tab_spacing;
-    rl::Rectangle quick_tab = { quick_x, tab_y, tab_width, tab_height };
+    rl::drawTextEx(self.font, tab.name, fav_pos, 16, 0f, fav_text);
+}
+
+fn void Manager.draw_tab_quicklist(&self, Tab* tab) {
+    float fav_x = tab.x_start + tab.width + tab.spacing;
+    float quick_x = fav_x + tab.width + tab.spacing;
+    rl::Rectangle quick_tab = { quick_x, tab.y, tab.width, tab.height };
     rl::Color quick_bg = self.ui.active_tab == QUICKLIST ? ui::COLOR_BODY : ui::COLOR_BG;
     rl::Color quick_text = self.ui.active_tab == QUICKLIST ? ui::COLOR_TITLE : ui::COLOR_TEXT;
     rl::drawRectangleRounded(quick_tab, 0.5, 12, quick_bg);
     if (self.ui.active_tab == QUICKLIST) {
         rl::drawRectangleRoundedLinesEx(quick_tab, 0.5, 24, 1.5, ui::COLOR_BADGE_LINE);
     }
-    ZString quick_txt = "Quicklist".zstr_tcopy();
-    rl::Vector2 quick_size = rl::measureTextEx(self.font, quick_txt, 16, 0);
+    rl::Vector2 quick_size = rl::measureTextEx(self.font, tab.name, 16, 0);
     rl::Vector2 quick_pos = {
-        quick_x + (tab_width - quick_size.x) / 2f,
-        tab_y + (tab_height - quick_size.y) / 2f
+        quick_x + (tab.width - quick_size.x) / 2f,
+        tab.y + (tab.height - quick_size.y) / 2f
     };
-    rl::drawTextEx(self.font, quick_txt, quick_pos, 16, 0f, quick_text);
+    rl::drawTextEx(self.font, tab.name, quick_pos, 16, 0f, quick_text);
 }
 
 fn String Manager.truncate_clip_text(&self, String text) {
