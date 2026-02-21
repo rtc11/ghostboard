@@ -1039,6 +1039,7 @@ fn void Manager.draw_clip_list(&self) {
     float content_start = HEADER_HEIGHT + TAB_HEIGHT + search_bar_height;
     
     int visual_idx = 0;
+    int drawn_count = 0;
     quicksort(&self.history);
     
     foreach (entry : self.history) {
@@ -1054,6 +1055,12 @@ fn void Manager.draw_clip_list(&self) {
         float visible_area_start = content_start;
         float visible_area_end = ui::SCREEN_HEIGHT - FOOTER_HEIGHT;
         if (y_pos + CLIP_HEIGHT < visible_area_start || y_pos > visible_area_end) {
+            visual_idx++;
+            continue;
+        }
+        
+        // Hard limit on visible items
+        if (drawn_count >= MAX_VISIBLE_ITEMS) {
             visual_idx++;
             continue;
         }
@@ -1078,6 +1085,7 @@ fn void Manager.draw_clip_list(&self) {
         }
         
         visual_idx++;
+        drawn_count++;
     }
 }
 
