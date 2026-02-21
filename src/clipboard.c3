@@ -21,6 +21,7 @@ struct StoredEntry {
     bool is_favorite;
     int quicklist_number;
     String source_app;
+    String note;
 }
 
 // Sort by hits

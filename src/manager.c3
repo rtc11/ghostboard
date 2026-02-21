@@ -25,7 +25,7 @@ const int CLIP_PADDING = 20;
 const int CLIP_HEIGHT = 25;
 const int CLIP_FONT_SIZE = 20;
 const int CLIP_TEXT_PADDING = 25;
-const int CLIP_MAX_TEXT_LENGTH = 84;
+const int CLIP_MAX_TEXT_LENGTH = 80;
 const float BADGE_WIDTH = 50;
 const float FAVORITE_ICON_OFFSET = -15;
 const float QUICKLIST_SPACING = 10;
@@ -69,7 +69,8 @@ fn bool Manager.is_entry_visible(&self, StoredEntry entry) {
     if (self.ui.mode == SEARCH && self.ui.search_query.len() > 0) {
         String query_lower = self.ui.search_query.str_view().to_lower_tcopy();
         String text_lower = entry.text.to_lower_tcopy();
-        if (!text_lower.contains(query_lower)) {
+        String note_lower = entry.note.to_lower_tcopy();
+        if (!text_lower.contains(query_lower) && !note_lower.contains(query_lower)) {
             return false;
         }
     }
@@ -165,12 +166,13 @@ fn void Manager.update_state(&self) {
 
 fn void Manager.render(&self) {
     switch (self.ui.mode) {
-        case INSPECT: self.render_inspect();
-        case LIST   : self.render_clips();
-        case SEARCH : self.render_clips();
-        case HELP   : self.render_help();
-        case HIDE   : self.render_hidden();
-        case QUIT   :
+        case INSPECT  : self.render_inspect();
+        case LIST     : self.render_clips();
+        case SEARCH   : self.render_clips();
+        case HELP     : self.render_help();
+        case EDIT_NOTE: self.render_note_input();
+        case HIDE     : self.render_hidden();
+        case QUIT     :
     }
 }
 
@@ -209,6 +211,7 @@ fn void Manager.handle_input(&self) {
         case SEARCH: self.handle_search_input();
         case INSPECT: self.handle_inspect_input();
         case HELP: self.handle_help_input();
+        case EDIT_NOTE: self.handle_note_input();
         case HIDE:
         case QUIT:
     }
@@ -290,7 +293,10 @@ fn void Manager.handle_navigation(&self) {
     bool key_up = rl::isKeyDown(rl::KEY_UP) || rl::isKeyDown(rl::KEY_K);
     
     if (!key_down && !key_up) {
-        self.ui.key_repeat_counter = 0;
+        // Don't reset counter if backspace is being held (for text input repeat)
+        if (!rl::isKeyDown(rl::KEY_BACKSPACE)) {
+            self.ui.key_repeat_counter = 0;
+        }
         return;
     }
     
@@ -425,9 +431,18 @@ fn void Manager.handle_text_input(&self) {
         key = rl::getCharPressed();
     }
     
-    if (rl::isKeyPressed(rl::KEY_BACKSPACE) && self.ui.search_query.len() > 0) {
-        self.ui.search_query.delete(self.ui.search_query.len() - 1, 1);
-        self.ui.selected_idx = 0;
+    // Backspace with repeat support
+    if (rl::isKeyDown(rl::KEY_BACKSPACE) && self.ui.search_query.len() > 0) {
+        bool first_press = rl::isKeyPressed(rl::KEY_BACKSPACE);
+        bool should_repeat = self.ui.key_repeat_counter >= 20 && 
+                             (self.ui.key_repeat_counter - 20) % 3 == 0;
+        if (first_press || should_repeat) {
+            self.ui.search_query.delete(self.ui.search_query.len() - 1, 1);
+            self.ui.selected_idx = 0;
+        }
+        self.ui.key_repeat_counter++;
+    } else if (!rl::isKeyDown(rl::KEY_BACKSPACE)) {
+        self.ui.key_repeat_counter = 0;
     }
 }
 
@@ -450,6 +465,9 @@ fn void Manager.handle_mode_switching(&self) {
             case HELP:
                 self.ui.mode = LIST;
                 self.ui.scroll_pos = {0, 0};
+            case EDIT_NOTE:
+                self.ui.mode = LIST;
+                self.ui.note_input.clear();
             default:
                 self.ui.mode = HIDE;
                 rl::setWindowState(WINDOW_HIDDEN);
@@ -549,6 +567,17 @@ fn void Manager.handle_list_input(&self) {
     self.handle_selection();
     self.handle_favorite_toggle();
     self.handle_quicklist_toggle();
+    
+    // 'n' to add/edit note
+    if (rl::isKeyPressed(rl::KEY_N) && self.history.len() > 0) {
+        StoredEntry? entry = self.get_selected_entry();
+        if (try entry) {
+            self.ui.note_input.clear();
+            self.ui.note_input.append(entry.note);
+            self.ui.mode = EDIT_NOTE;
+            log::info("editing note for clip");
+        }
+    }
 }
 
 fn void Manager.handle_search_input(&self) {
@@ -623,6 +652,40 @@ fn void Manager.handle_help_input(&self) {
     if (wheel != 0) {
         self.ui.scroll_pos.y -= wheel * 30.0f;
         if (self.ui.scroll_pos.y < 0) self.ui.scroll_pos.y = 0;
+    }
+}
+
+fn void Manager.handle_note_input(&self) {
+    int key = rl::getCharPressed();
+    while (key > 0) {
+        if (key >= 32 && key < 127) {
+            self.ui.note_input.append_char((char)key);
+        }
+        key = rl::getCharPressed();
+    }
+    
+    if (rl::isKeyDown(rl::KEY_BACKSPACE) && self.ui.note_input.len() > 0) {
+        bool first_press = rl::isKeyPressed(rl::KEY_BACKSPACE);
+        bool should_repeat = self.ui.key_repeat_counter >= 20 && 
+                             (self.ui.key_repeat_counter - 20) % 3 == 0;
+        if (first_press || should_repeat) {
+            self.ui.note_input.delete(self.ui.note_input.len() - 1, 1);
+        }
+        self.ui.key_repeat_counter++;
+    } else if (!rl::isKeyDown(rl::KEY_BACKSPACE)) {
+        self.ui.key_repeat_counter = 0;
+    }
+    
+    if (rl::isKeyPressed(rl::KEY_ENTER)) {
+        int actual_idx = self.get_actual_index_from_visual(self.ui.selected_idx);
+        if (actual_idx >= 0) {
+            self.history[actual_idx].note.free(mem);
+            self.history[actual_idx].note = self.ui.note_input.str_view().copy(mem);
+            storage::save_to_file(&self.config, &self.history);
+            log::info("saved note for clip %d", actual_idx);
+        }
+        self.ui.mode = LIST;
+        self.ui.note_input.clear();
     }
 }
 
@@ -947,15 +1010,22 @@ fn void Manager.draw_clip_badge(&self, int text_length, float y_pos, bool is_sel
 
 fn void Manager.draw_quicklist_number(&self, int quicklist_number, float y_pos) {
     if (quicklist_number == 0) return;
-    
     int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
     float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
     float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
-    
     ZString num_str = string::tformat_zstr("%d", quicklist_number);
     rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
     float num_x = badge_x - num_size.x - QUICKLIST_SPACING;
     rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, 16, 0f, ui::COLOR_PURPLE);
+}
+
+fn void Manager.draw_note_indicator(&self, String note, float y_pos) {
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
+    float note_x = badge_x + BADGE_WIDTH + 8;  // Right after badge with small spacing
+    float note_y = y_pos + 5f;
+    ZString n_letter = "n".zstr_tcopy();
+    rl::drawTextEx(self.font, n_letter, {note_x, note_y + -3}, 16, 0f, ui::COLOR_PURPLE);
 }
 
 fn void Manager.draw_clip_list(&self) {
@@ -988,6 +1058,11 @@ fn void Manager.draw_clip_list(&self) {
         self.draw_clip_badge((int)entry.text.len, y_pos, is_selected);
         self.draw_quicklist_number(entry.quicklist_number, y_pos);
         
+        // Draw note indicator if clip has a note
+        if (entry.note.len > 0) {
+            self.draw_note_indicator(entry.note, y_pos);
+        }
+        
         // Timestamp in footer for selected item
         if (is_selected) {
             ZString timestamp = string::tformat_zstr("%s", entry.timestamp);
@@ -1006,8 +1081,18 @@ fn void Manager.draw_footer(&self) {
         ZString footer = string::tformat_zstr("-- VISUAL --  %d clip%s selected       q: exit visual", count, count == 1 ? "" : "s");
         rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_PURPLE);
     } else {
-        ZString footer = string::tformat_zstr("h: help       q: quit");
-        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+        StoredEntry? selected = self.get_selected_entry();
+        if (try selected && selected.note.len > 0) {
+            ZString footer = string::tformat_zstr("h: help       q: quit       note: %s", selected.note);
+            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+            ZString prefix = "h: help       q: quit       ".zstr_tcopy();
+            rl::Vector2 prefix_size = rl::measureTextEx(self.font, prefix, 19, 0);
+            ZString note_text = string::tformat_zstr("note: %s", selected.note);
+            rl::drawTextEx(self.font, note_text, {25 + prefix_size.x, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_PURPLE);
+        } else {
+            ZString footer = string::tformat_zstr("h: help       q: quit");
+            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+        }
     }
 }
 
@@ -1129,6 +1214,7 @@ fn List{HelpSection} get_help_sections() {
     action_items.push_all({
         {"Enter", "Select and paste clip"},
         {"o or i", "Inspect full clip"},
+        {"n", "Add/edit note for clip"},
         {"f", "Toggle favorite"},
         {"1-9", "Assign to quicklist slot"},
         {"dd", "Delete clip (double-tap)"},
@@ -1224,6 +1310,43 @@ fn void Manager.render_help(&self) {
     // Footer
     ZString footer = string::tformat_zstr("h: help       q: quit");
     rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+    
+    rl::endDrawing();
+}
+
+fn void Manager.render_note_input(&self) {
+    rl::beginDrawing();
+    rl::clearBackground(ui::COLOR_BG);
+    rl::setTextureFilter(self.font.texture, BILINEAR);
+    
+    ZString header_txt = "Add Note".zstr_tcopy();
+    float header_font_size = 24f;
+    rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
+    float header_x = (ui::SCREEN_WIDTH - header_size.x) / 2f;
+    int header_padding = 10;
+    rl::Rectangle header_rec = { 
+        header_x - header_padding, 
+        10 - header_padding / 2f, 
+        header_size.x + header_padding * 2f, 
+        header_size.y + header_padding 
+    };
+    rl::drawRectangleRounded(header_rec, 0.5, 12, ui::COLOR_BODY);
+    rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, ui::COLOR_TITLE);
+    
+    rl::Rectangle input_box = { 50, 100, ui::SCREEN_WIDTH - 100, 50 };
+    rl::drawRectangleRounded(input_box, 0.3, 8, ui::COLOR_BODY);
+    
+    String input_text = self.ui.note_input.len() > 0 ? self.ui.note_input.str_view() : "";
+    rl::drawTextEx(self.font, input_text.zstr_tcopy(), {60, 115}, 20, 0f, ui::COLOR_TEXT);
+    
+    // Cursor (blinking)
+    if (((int)(rl::getTime() * 2)) % 2 == 0) {
+        rl::Vector2 text_size = rl::measureTextEx(self.font, input_text.zstr_tcopy(), 20, 0);
+        rl::drawRectangle((int)(60 + text_size.x), 115, 2, 20, ui::COLOR_TITLE);
+    }
+    
+    ZString instructions = "Enter to save • Esc to cancel".zstr_tcopy();
+    rl::drawTextEx(self.font, instructions, {50, 170}, 16, 0f, ui::COLOR_FOOTER);
     
     rl::endDrawing();
 }

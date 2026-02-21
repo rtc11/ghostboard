@@ -59,6 +59,22 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             break;
         }
         
+        // Read note (new field with presence flag for backward compatibility)
+        String note = "".copy(mem);
+        bool has_note = false;
+        if (try io::read_any(&file, &has_note) && has_note) {
+            usz note_len;
+            if (try io::read_any(&file, &note_len)) {
+                if (note_len > 0 && note_len < 10000) {  // Sanity check
+                    char[] note_buffer = mem::alloc_array(char, note_len);
+                    if (try io::read_all(&file, note_buffer)) {
+                        note = ((String)note_buffer).copy(mem);
+                    }
+                    mem::free(note_buffer);
+                }
+            }
+        }
+        
         StoredEntry entry = {
             .text = ((String)buffer).copy(mem),
             .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
@@ -66,6 +82,7 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             .is_favorite = is_favorite,
             .quicklist_number = quicklist_number,
             .source_app = source_app,
+            .note = note,
         };
         history.push(entry);
         mem::free(buffer);
@@ -100,6 +117,15 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
         usz text_len = entry.text.len;
         io::write_any(&file, &text_len)!!;
         io::write_all(&file, entry.text)!!;
+        
+        // Write note with presence flag for backward compatibility
+        bool has_note = entry.note.len > 0;
+        io::write_any(&file, &has_note)!!;
+        if (has_note) {
+            usz note_len = entry.note.len;
+            io::write_any(&file, &note_len)!!;
+            io::write_all(&file, entry.note)!!;
+        }
     }
     log::info("saved %d clips to storage", history.len());
 }

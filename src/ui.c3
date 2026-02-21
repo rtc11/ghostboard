@@ -37,6 +37,8 @@ struct UIState {
     int visual_anchor;
     bool g_pending;
     double last_g_press_time;
+    bool editing_note;
+    DString note_input;
 }
 
 enum Mode {
@@ -45,6 +47,7 @@ enum Mode {
     INSPECT,
     SEARCH,
     HELP,
+    EDIT_NOTE,
     QUIT,
 }
 
