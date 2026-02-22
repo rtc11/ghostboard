@@ -985,12 +985,10 @@ fn String Manager.truncate_clip_text(&self, String text) {
 fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected, bool is_visual_selected) {
     int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
     rl::Color rec_color;
-    if (is_visual_selected) {
-        rec_color = ui::COLOR_PURPLE;  // Visual selection color
-    } else if (is_selected) {
-        rec_color = ui::COLOR_BODY;
-    } else {
-        rec_color = ui::COLOR_BG;
+    switch {
+        case is_visual_selected: rec_color = ui::COLOR_PURPLE;
+        case is_selected       : rec_color = ui::COLOR_BODY;
+        default                : rec_color = ui::COLOR_BG;
     }
     rl::Rectangle rec = { CLIP_PADDING, y_pos, rec_width, CLIP_HEIGHT };
     rl::drawRectangleRounded(rec: rec, roundness: 0.5, segments: 12, color: rec_color);
@@ -998,11 +996,16 @@ fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected, bool 
 
 fn void Manager.draw_favorite_indicator(&self, float y_pos, bool is_favorite) {
     if (!is_favorite) return;
+    
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
+    float star_x = badge_x - 25;
     float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
+    
     rl::drawTextEx(
         self.font, 
         "★".zstr_tcopy(), 
-        {(float)CLIP_TEXT_PADDING + FAVORITE_ICON_OFFSET, y_pos + font_y_offset + 3}, 
+        {star_x, y_pos + font_y_offset + 3}, 
         self.scale_font((float)CLIP_FONT_SIZE) - 5, 
         0f, 
         ui::COLOR_GOLD
@@ -1013,10 +1016,11 @@ fn void Manager.draw_clip_text(&self, String text, float y_pos, bool is_selected
     String display_text = self.truncate_clip_text(text);
     float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
     rl::Color text_color = is_selected ? ui::COLOR_TITLE : ui::COLOR_TEXT;
+    float text_x = CLIP_TEXT_PADDING + 60;  // Leave space for [F] and ★
     rl::drawTextEx(
         self.font, 
         display_text.zstr_tcopy(), 
-        {CLIP_TEXT_PADDING, y_pos + font_y_offset}, 
+        {text_x, y_pos + font_y_offset}, 
         self.scale_font(CLIP_FONT_SIZE), 
         0f, 
         text_color
@@ -1046,34 +1050,26 @@ fn void Manager.draw_clip_badge(&self, int text_length, float y_pos, bool is_sel
 
 fn void Manager.draw_quicklist_number(&self, int quicklist_number, float y_pos) {
     if (quicklist_number == 0) return;
-    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
-    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
     float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
     ZString num_str = string::tformat_zstr("%d", quicklist_number);
-    rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
-    float num_x = badge_x - num_size.x - QUICKLIST_SPACING;
-    rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
+    float num_x = 10;
+    rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset + 2}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
 }
 
 fn void Manager.draw_note_indicator(&self, String note, float y_pos) {
-    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
-    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
-    float note_x = badge_x + BADGE_WIDTH + 8;  // Right after badge with small spacing
-    float note_y = y_pos + 5f;
-    ZString n_letter = "n".zstr_tcopy();
-    rl::drawTextEx(self.font, n_letter, {note_x, note_y + -3}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
+    ZString n_icon = "[N]".zstr_tcopy();
+    rl::Vector2 icon_size = rl::measureTextEx(self.font, n_icon, self.scale_font(16), 0);
+    float file_icon_width = rl::measureTextEx(self.font, "[F]".zstr_tcopy(), self.scale_font(16), 0).x;
+    float note_x = CLIP_TEXT_PADDING + 5 + file_icon_width + 8;
+    float font_y_offset = (CLIP_HEIGHT - self.scale_font(16)) / 2f;
+    rl::drawTextEx(self.font, n_icon, {note_x, y_pos + font_y_offset}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
 }
 
 fn void Manager.draw_file_indicator(&self, float y_pos) {
-    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
-    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
-    
-    // Position before the badge (left side) with [F] indicator
     ZString f_icon = "[F]".zstr_tcopy();
     rl::Vector2 icon_size = rl::measureTextEx(self.font, f_icon, self.scale_font(16), 0);
-    float file_x = badge_x - icon_size.x - 8;  // Left of badge with small spacing
+    float file_x = CLIP_TEXT_PADDING + 5;
     float font_y_offset = (CLIP_HEIGHT - self.scale_font(16)) / 2f;
-    
     rl::drawTextEx(self.font, f_icon, {file_x, y_pos + font_y_offset}, self.scale_font(16), 0f, ui::COLOR_ORANGE);
 }
 
