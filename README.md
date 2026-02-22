@@ -72,6 +72,7 @@ Some clips are long, open a scrollable view to see the whole ting.
 - [x] source app tracking - shows which app the clip was copied from
 - [ ] window resize - drag window edges to resize
 - [x] font scaling - use Command++ and Command+- to adjust font size
+- [x] copy and paste file(s) 
 - [ ] clipboard categories/tags - auto-detect urls, code snippets, images, etc and show icons/badges
 - [ ] rich text/image preview - show formatted text or thumbnails
 - [ ] configurable hotkey - let user change ctrl-shift-v in settings

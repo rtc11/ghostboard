@@ -108,6 +108,8 @@ fn StoredEntry? Manager.get_entry_at_visual_index(&self, int visual_idx) {
             continue;
         }
         if (current_idx == visual_idx) {
+            log::debug("get_entry_at_visual_index(%d): is_file=%s, file_paths.len=%d", 
+                      visual_idx, entry.is_file, entry.file_paths.len());
             return entry;
         }
         current_idx++;
@@ -374,7 +376,14 @@ fn void Manager.handle_selection(&self) {
         } else {
             StoredEntry? selected = self.get_selected_entry();
             if (try selected) {
-                self.cp.set(selected.text);
+                log::info("Pasting clip: is_file=%s, file_paths.len=%d", selected.is_file, selected.file_paths.len());
+                if (selected.is_file && selected.file_paths.len() > 0) {
+                    log::info("Calling set_files with %d paths", selected.file_paths.len());
+                    self.cp.set_files(selected.file_paths);
+                } else {
+                    log::info("Calling set with text");
+                    self.cp.set(selected.text);
+                }
                 self.ui.mode = HIDE;
                 rl::setWindowState(WINDOW_HIDDEN);
                 ui::move_app_to_background();
@@ -689,13 +698,22 @@ fn void Manager.handle_note_input(&self) {
     }
 }
 
-fn void Manager.add(&self, String text, String source_app) {
+fn void Manager.add(&self, String text, String source_app, bool is_file = false, List{String}* file_paths = null) {
     StoredEntry entry = {
         .text = text.copy(mem),
         .timestamp = datetime::now().to_local(),
         .hits = 1,
         .source_app = source_app.copy(mem),
+        .is_file = is_file,
     };
+    
+    // Copy file paths if provided
+    entry.file_paths.tinit();
+    if (file_paths) {
+        foreach (path : file_paths) {
+            entry.file_paths.push(path.copy(mem));
+        }
+    }
 
     self.history.push(entry);
     storage::save_to_file(&self.config, &self.history);
@@ -817,7 +835,7 @@ fn bool Manager.update(&self) {
     } 
 
     log::info("new clip saved from %s", cur.source_app);
-    self.add(cur.text, cur.source_app);
+    self.add(cur.text, cur.source_app, cur.is_file, &cur.file_paths);
 
     if (self.history.len() > self.history_limit) {
         if (try old = self.history.pop_first()) {
@@ -1046,6 +1064,19 @@ fn void Manager.draw_note_indicator(&self, String note, float y_pos) {
     rl::drawTextEx(self.font, n_letter, {note_x, note_y + -3}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
 }
 
+fn void Manager.draw_file_indicator(&self, float y_pos) {
+    int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
+    float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
+    
+    // Position before the badge (left side) with [F] indicator
+    ZString f_icon = "[F]".zstr_tcopy();
+    rl::Vector2 icon_size = rl::measureTextEx(self.font, f_icon, self.scale_font(16), 0);
+    float file_x = badge_x - icon_size.x - 8;  // Left of badge with small spacing
+    float font_y_offset = (CLIP_HEIGHT - self.scale_font(16)) / 2f;
+    
+    rl::drawTextEx(self.font, f_icon, {file_x, y_pos + font_y_offset}, self.scale_font(16), 0f, ui::COLOR_ORANGE);
+}
+
 fn void Manager.draw_clip_list(&self) {
     float search_bar_height = self.ui.mode == SEARCH ? 30 : 0;
     float content_start = HEADER_HEIGHT + TAB_HEIGHT + search_bar_height;
@@ -1086,6 +1117,11 @@ fn void Manager.draw_clip_list(&self) {
         // Draw note indicator if clip has a note
         if (entry.note.len > 0) {
             self.draw_note_indicator(entry.note, y_pos);
+        }
+        
+        // Draw file indicator if clip represents files
+        if (entry.is_file) {
+            self.draw_file_indicator(y_pos);
         }
         
         // Timestamp in footer for selected item

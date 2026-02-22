@@ -75,6 +75,28 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             }
         }
         
+        // Read file paths (new field with presence flag)
+        List{String} file_paths;
+        file_paths.tinit();
+        bool is_file = false;
+        if (try io::read_any(&file, &is_file) && is_file) {
+            usz file_count;
+            if (try io::read_any(&file, &file_count)) {
+                for (usz i = 0; i < file_count && i < 1000; i++) {  // Sanity check
+                    usz path_len;
+                    if (try io::read_any(&file, &path_len)) {
+                        if (path_len > 0 && path_len < 10000) {
+                            char[] path_buffer = mem::alloc_array(char, path_len);
+                            if (try io::read_all(&file, path_buffer)) {
+                                file_paths.push(((String)path_buffer).copy(mem));
+                            }
+                            mem::free(path_buffer);
+                        }
+                    }
+                }
+            }
+        }
+        
         StoredEntry entry = {
             .text = ((String)buffer).copy(mem),
             .timestamp = datetime::from_time_tz((Time)timestamp, gmt_offset),
@@ -83,7 +105,11 @@ fn void load_from_file(Config* config, List{StoredEntry}* history) {
             .quicklist_number = quicklist_number,
             .source_app = source_app,
             .note = note,
+            // .file_paths = file_paths.array_view().copy(mem),
+            .file_paths = file_paths,
+            .is_file = is_file,
         };
+        log::info("Loaded entry: is_file=%s, file_paths.len=%d, text=%s", is_file, file_paths.len(), entry.text[:entry.text.len < 50 ? entry.text.len : 50]);
         history.push(entry);
         mem::free(buffer);
     }
@@ -101,6 +127,7 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
     defer (void)file.close();
     
     foreach (entry: history) {
+        log::info("Saving entry: is_file=%s, file_paths.len=%d", entry.is_file, entry.file_paths.len());
         Time timestamp = entry.timestamp.time;
         io::write_any(&file, &timestamp)!!;
         int gmt_offset = entry.timestamp.gmt_offset;
@@ -125,6 +152,19 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
             usz note_len = entry.note.len;
             io::write_any(&file, &note_len)!!;
             io::write_all(&file, entry.note)!!;
+        }
+        
+        // Write file paths with presence flag
+        bool is_file = entry.is_file;
+        io::write_any(&file, &is_file)!!;
+        if (is_file) {
+            usz file_count = entry.file_paths.len();
+            io::write_any(&file, &file_count)!!;
+            foreach (file_path : entry.file_paths) {
+                usz path_len = file_path.len;
+                io::write_any(&file, &path_len)!!;
+                io::write_all(&file, file_path)!!;
+            }
         }
     }
     log::info("saved %d clips to storage", history.len());
