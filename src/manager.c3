@@ -56,7 +56,7 @@ fn Manager init(Config config) {
         .cp = cp,
         .history_limit = config.history_limit,
         .config = config,
-        .font = ui::load_font(),
+        .font = ui::load_font(config.font_path),
         .font_scale = font_scale,
     };
     storage::load_from_file(&manager.config, &manager.history);

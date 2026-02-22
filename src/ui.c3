@@ -110,14 +110,7 @@ fn float get_system_font_size() {
     return (float)system_font_size;
 }
 
-fn Font load_font() {
-    ObjcId bundle = objc::msg_send(objc::getClass("NSBundle"), SendVoid, "mainBundle");
-    ObjcId resource_path = objc::msg_send(bundle, SendVoid, "resourcePath");
-    ZString bundle_resources = null;
-    if (resource_path != null) {
-        bundle_resources = (ZString)objc::msg_send(resource_path, SendVoid, "UTF8String");
-    }
-
+fn Font load_font(String font_path) {
     // Include basic ASCII plus extra symbols
     int[99] codepoints;
     for (int i = 0; i < 95; i++) {
@@ -128,26 +121,16 @@ fn Font load_font() {
     codepoints[97] = 0x2191; // ↑ (U+2191)
     codepoints[98] = 0x2193; // ↓ (U+2193)
 
-    Font font;
-    if (bundle_resources != null) {
-        String font_path = string::tformat("%s/SF-Pro.ttf", bundle_resources);
-        log::debug("trying to load font from bundle: %s", font_path);
-        font = rl::loadFontEx(font_path.zstr_tcopy(), 64, &codepoints, codepoints.len);
-    } else {
-        font.texture.id = 0;
-    }
+    log::info("loading font from: %s", font_path);
+    Font font = rl::loadFontEx(font_path.zstr_tcopy(), 64, &codepoints, codepoints.len);
     
     if (font.texture.id == 0) {
-        log::debug("failed to load font from bundle, trying resources/SF-Pro.ttf");
-        font = rl::loadFontEx("resources/SF-Pro.ttf", 64, &codepoints, codepoints.len);
-        if (font.texture.id == 0) {
-            log::warn("failed to load font from resources/SF-Pro.ttf");
-        } else {
-            log::info("loaded font from resources/SF-Pro.ttf");
-        }
+        log::error("failed to load font from %s", font_path);
+        log::warn("falling back to default raylib font");
     } else {
-        log::info("loaded font from bundle");
+        log::info("successfully loaded font");
     }
+    
     return font;
 }
 

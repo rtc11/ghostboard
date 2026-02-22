@@ -13,6 +13,7 @@ fn void main(String[] args)
         .storage_file = "storage.bin",
         .log_file = "logs.txt",
         .history_limit = 500,
+        .font_path = "/System/Library/Fonts/SFNS.ttf",  // macOS system font
     };
 
     logger::setup_logging(&config);
