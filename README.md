@@ -70,13 +70,14 @@ Some clips are long, open a scrollable view to see the whole ting.
 - [x] export/import history - binary storage format
 - [x] help page - press h to see keyboard shortcuts
 - [x] source app tracking - shows which app the clip was copied from
+- [ ] window resize - drag window edges to resize
+- [x] font scaling - use Command++ and Command+- to adjust font size
 - [ ] clipboard categories/tags - auto-detect urls, code snippets, images, etc and show icons/badges
 - [ ] rich text/image preview - show formatted text or thumbnails
 - [ ] configurable hotkey - let user change ctrl-shift-v in settings
 - [ ] dark/light theme toggle
 - [ ] clipboard templates - save frequently used text snippets
 - [ ] statistics - show most copied items, usage patterns
-- [ ] window resize
 - [ ] smart duplicate handling
     - show "previously copied x times"
     - group duplicates and show last N unique clips

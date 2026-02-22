@@ -117,6 +117,7 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     
     // Ctrl+Shift+V to open menu
     if (control && shift && keycode == KEYCODE_V) {
+        log::info("Ctrl+Shift+V detected, current mode: %s", manager.ui.mode);
         if (manager.ui.mode == HIDE) {
             log::info("global hotkey detected! enabling menu");
             manager.ui.show_window();
@@ -125,33 +126,41 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     }
     
     // Ctrl+D and Ctrl+U for page scrolling when window is visible
-    if (control && !shift && !command && manager.ui.mode != HIDE) {
+    if (control && !shift && !command) {
         if (keycode == KEYCODE_D) {
-            log::info("Ctrl+D detected in event tap");
-            manager.ui.ctrl_d_pressed = true;
+            log::info("Ctrl+D detected in event tap, mode: %s", manager.ui.mode);
+            if (manager.ui.mode != HIDE) {
+                manager.ui.ctrl_d_pressed = true;
+            }
             return event;
         }
         if (keycode == KEYCODE_U) {
-            log::info("Ctrl+U detected in event tap");
-            manager.ui.ctrl_u_pressed = true;
+            log::info("Ctrl+U detected in event tap, mode: %s", manager.ui.mode);
+            if (manager.ui.mode != HIDE) {
+                manager.ui.ctrl_u_pressed = true;
+            }
             return event;
         }
     }
     
     // Command++ and Command+- for font scaling when window is visible
-    if (command && !control && !shift && manager.ui.mode != HIDE) {
+    if (command && !control && !shift) {
         if (keycode == KEYCODE_EQUAL) { // Plus/Equal key (Command++)
-            log::info("Command++ detected - increasing font size");
-            manager.font_scale += 0.1;
-            if (manager.font_scale > 2.0) manager.font_scale = 2.0; // Max 2x
-            log::info("Font scale: %.2f", manager.font_scale);
+            log::info("Command++ detected - mode: %s", manager.ui.mode);
+            if (manager.ui.mode != HIDE) {
+                manager.font_scale += 0.1;
+                if (manager.font_scale > 2.0) manager.font_scale = 2.0; // Max 2x
+                log::info("Font scale: %.2f", manager.font_scale);
+            }
             return null;
         }
         if (keycode == KEYCODE_SLASH) { // Slash key (Command+-)
-            log::info("Command+- detected - decreasing font size");
-            manager.font_scale -= 0.1;
-            if (manager.font_scale < 0.5) manager.font_scale = 0.5; // Min 0.5x
-            log::info("Font scale: %.2f", manager.font_scale);
+            log::info("Command+- detected - mode: %s", manager.ui.mode);
+            if (manager.ui.mode != HIDE) {
+                manager.font_scale -= 0.1;
+                if (manager.font_scale < 0.5) manager.font_scale = 0.5; // Min 0.5x
+                log::info("Font scale: %.2f", manager.font_scale);
+            }
             return null;
         }
     }
