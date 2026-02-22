@@ -6,6 +6,22 @@ import cg, cf, ct;
 import config, clipboard, manager, ui;
 import raylib5;
 
+// macOS hardware keycodes (different from ASCII/raylib character codes)
+const ushort KEYCODE_D = 0x02;
+const ushort KEYCODE_U = 0x20;
+const ushort KEYCODE_V = 0x09;
+const ushort KEYCODE_EQUAL = 0x1B;      // Equal/Plus key
+const ushort KEYCODE_SLASH = 0x2C;      // Slash key (used for Command+-)
+const ushort KEYCODE_1 = 0x12;
+const ushort KEYCODE_2 = 0x13;
+const ushort KEYCODE_3 = 0x14;
+const ushort KEYCODE_4 = 0x15;
+const ushort KEYCODE_5 = 0x17;
+const ushort KEYCODE_6 = 0x16;
+const ushort KEYCODE_7 = 0x1A;
+const ushort KEYCODE_8 = 0x1C;
+const ushort KEYCODE_9 = 0x19;
+
 fn void main(String[] args)
 {
     Config config = {
@@ -100,7 +116,7 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     Manager* manager = (Manager*)refcon;
     
     // Ctrl+Shift+V to open menu
-    if (control && shift && keycode == 0x09) {
+    if (control && shift && keycode == KEYCODE_V) {
         if (manager.ui.mode == HIDE) {
             log::info("global hotkey detected! enabling menu");
             manager.ui.show_window();
@@ -110,31 +126,49 @@ fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {
     
     // Ctrl+D and Ctrl+U for page scrolling when window is visible
     if (control && !shift && !command && manager.ui.mode != HIDE) {
-        if (keycode == 0x02) { // D key
+        if (keycode == KEYCODE_D) {
             log::info("Ctrl+D detected in event tap");
             manager.ui.ctrl_d_pressed = true;
             return event;
         }
-        if (keycode == 0x20) { // U key
+        if (keycode == KEYCODE_U) {
             log::info("Ctrl+U detected in event tap");
             manager.ui.ctrl_u_pressed = true;
             return event;
         }
     }
     
+    // Command++ and Command+- for font scaling when window is visible
+    if (command && !control && !shift && manager.ui.mode != HIDE) {
+        if (keycode == KEYCODE_EQUAL) { // Plus/Equal key (Command++)
+            log::info("Command++ detected - increasing font size");
+            manager.font_scale += 0.1;
+            if (manager.font_scale > 2.0) manager.font_scale = 2.0; // Max 2x
+            log::info("Font scale: %.2f", manager.font_scale);
+            return null;
+        }
+        if (keycode == KEYCODE_SLASH) { // Slash key (Command+-)
+            log::info("Command+- detected - decreasing font size");
+            manager.font_scale -= 0.1;
+            if (manager.font_scale < 0.5) manager.font_scale = 0.5; // Min 0.5x
+            log::info("Font scale: %.2f", manager.font_scale);
+            return null;
+        }
+    }
+    
     // Ctrl+Shift+1-9 for quicklist (only when app is hidden)
-    if ((control || command) && shift && keycode >= 0x12 && keycode <= 0x1C && manager.ui.mode == HIDE) {
+    if ((control || command) && shift && keycode >= KEYCODE_1 && keycode <= KEYCODE_9 && manager.ui.mode == HIDE) {
         int num = 0;
         switch (keycode) {
-            case 0x12: num = 1;
-            case 0x13: num = 2;
-            case 0x14: num = 3;
-            case 0x15: num = 4;
-            case 0x17: num = 5;
-            case 0x16: num = 6;
-            case 0x1A: num = 7;
-            case 0x1C: num = 8;
-            case 0x19: num = 9;
+            case KEYCODE_1: num = 1;
+            case KEYCODE_2: num = 2;
+            case KEYCODE_3: num = 3;
+            case KEYCODE_4: num = 4;
+            case KEYCODE_5: num = 5;
+            case KEYCODE_6: num = 6;
+            case KEYCODE_7: num = 7;
+            case KEYCODE_8: num = 8;
+            case KEYCODE_9: num = 9;
         }
         if (num > 0) {
             log::info("checking for quicklist clip with number %d", num);

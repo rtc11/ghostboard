@@ -9,6 +9,8 @@ Clipboard manager for macOS.
 |-----|--------|
 | `Ctrl+Shift+V` | Open GhostBoard |
 | `Ctrl+Shift+1-9` | Paste quicklist clip (slots 1-9) |
+| `Command++` | Increase font size |
+| `Command+-` | Decrease font size |
 
 ### Navigation
 | Key | Action |

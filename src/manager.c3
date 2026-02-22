@@ -999,7 +999,7 @@ fn void Manager.draw_clip_text(&self, String text, float y_pos, bool is_selected
         self.font, 
         display_text.zstr_tcopy(), 
         {CLIP_TEXT_PADDING, y_pos + font_y_offset}, 
-        CLIP_FONT_SIZE, 
+        self.scale_font(CLIP_FONT_SIZE), 
         0f, 
         text_color
     );
@@ -1109,7 +1109,7 @@ fn void Manager.draw_footer(&self) {
     } else {
         StoredEntry? selected = self.get_selected_entry();
         if (try selected && selected.note.len > 0) {
-            ZString footer = string::tformat_zstr("h: help       q: quit       note: %s", selected.note);
+            ZString footer = string::tformat_zstr("h: help       q: quit");
             rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_FOOTER);
             ZString prefix = "h: help       q: quit       ".zstr_tcopy();
             rl::Vector2 prefix_size = rl::measureTextEx(self.font, prefix, 19, 0);
@@ -1176,10 +1176,10 @@ fn void Manager.render_inspect(&self) {
         float line_num_width = line_num_size.x + 20;  // Extra padding
         
         rl::beginScissorMode(
-            x: (20 + text_padding) * (int)scale.x, 
-            y: (50 + text_padding) * (int)scale.y,
-            width: (ui::SCREEN_WIDTH - 40 - text_padding * 2) * (int)scale.x,
-            height: (ui::SCREEN_HEIGHT - 80 - text_padding * 2) * (int)scale.y,
+            x: 20 + text_padding, 
+            y: 50 + text_padding,
+            width: ui::SCREEN_WIDTH - 40 - text_padding * 2,
+            height: ui::SCREEN_HEIGHT - 80 - text_padding * 2,
         );
         
         float line_height = 22f;  // Height per line
@@ -1287,6 +1287,8 @@ fn List{HelpSection} get_help_sections() {
     global_items.push_all({
         {"Ctrl+Shift+V", "Open GhostBoard"},
         {"Ctrl+Shift+1-9", "Paste quicklist clip"},
+        {"Command++", "Increase font size"},
+        {"Command+-", "Decrease font size"},
     });
     
     List{HelpItem} tab_items;
@@ -1329,17 +1331,17 @@ fn void Manager.render_help(&self) {
     rl::drawRectangleRounded(help_area, 0.2, 8, ui::COLOR_BODY);
     
     int padding = 20;
-    rl::Vector2 scale = rl::getWindowScaleDPI();
     rl::beginScissorMode(
-        x: (20 + padding) * (int)scale.x, 
-        y: (50 + padding) * (int)scale.y,
-        width: (ui::SCREEN_WIDTH - 40 - padding * 2) * (int)scale.x,
-        height: (ui::SCREEN_HEIGHT - 90 - padding * 2) * (int)scale.y,
+        x: 20 + padding, 
+        y: 50 + padding,
+        width: ui::SCREEN_WIDTH - 40 - padding * 2,
+        height: ui::SCREEN_HEIGHT - 90 - padding * 2,
     );
     
     float y_pos = 50f + padding - self.ui.scroll_pos.y;
-    float line_height = 28;
-    float section_spacing = 15;
+    float base_line_height = 28;
+    float line_height = base_line_height * self.font_scale;
+    float section_spacing = 15 * self.font_scale;
     float indent = 30;
     
     // Two-column layout
