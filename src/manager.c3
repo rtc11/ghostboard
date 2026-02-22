@@ -37,9 +37,15 @@ struct Manager {
     Config config;
     Font font;
     UIState ui;
+    float font_scale;
 }
 
 fn Manager init(Config config) {
+    float system_font_size = ui::get_system_font_size();
+    float font_scale = system_font_size / 13.0;
+    log::info("macOS system font size: %.1f pt (scale multiplier: %.2f)", 
+              system_font_size, font_scale);
+    
     Clipboard cp = {
         .instance = objc::msg_send(objc::class_by_name("NSPasteboard")!!, SendVoid, "generalPasteboard"),
         .items_sel = objc::sel_registerName("pasteboardItems"),
@@ -51,6 +57,7 @@ fn Manager init(Config config) {
         .history_limit = config.history_limit,
         .config = config,
         .font = ui::load_font(),
+        .font_scale = font_scale,
     };
     storage::load_from_file(&manager.config, &manager.history);
     manager.update();
@@ -86,6 +93,11 @@ fn int Manager.count_visible_entries(&self) {
         }
     }
     return count;
+}
+
+// Helper: Scale font size based on system font setting
+fn float Manager.scale_font(&self, float base_size) {
+    return base_size * self.font_scale;
 }
 
 // Helper: Get entry at visual index (accounting for filters)
@@ -859,7 +871,7 @@ fn void Manager.draw_search_bar(&self) {
         ZString search_display = string::tformat_zstr("/ %s", search_text);
         rl::Vector2 search_pos = {25, 73};
         rl::Color search_color = self.ui.search_query.len() > 0 ? ui::COLOR_TITLE : ui::COLOR_FOOTER;
-        rl::drawTextEx(self.font, search_display, search_pos, 18, 0f, search_color);
+        rl::drawTextEx(self.font, search_display, search_pos, self.scale_font(18), 0f, search_color);
     }
 }
 
@@ -903,7 +915,7 @@ fn void Manager.draw_tab_all_clips(&self, Tab* tab) {
         tab.x_start + (tab.width - all_size.x) / 2f,
         tab.y + (tab.height - all_size.y) / 2f
     };
-    rl::drawTextEx(self.font, tab.name, all_pos, 16, 0f, all_text);
+    rl::drawTextEx(self.font, tab.name, all_pos, self.scale_font(16), 0f, all_text);
 }
 
 fn void Manager.draw_tab_favorites(&self, Tab* tab) {
@@ -920,7 +932,7 @@ fn void Manager.draw_tab_favorites(&self, Tab* tab) {
         fav_x + (tab.width - fav_size.x) / 2f,
         tab.y + (tab.height - fav_size.y) / 2f
     };
-    rl::drawTextEx(self.font, tab.name, fav_pos, 16, 0f, fav_text);
+    rl::drawTextEx(self.font, tab.name, fav_pos, self.scale_font(16), 0f, fav_text);
 }
 
 fn void Manager.draw_tab_quicklist(&self, Tab* tab) {
@@ -938,7 +950,7 @@ fn void Manager.draw_tab_quicklist(&self, Tab* tab) {
         quick_x + (tab.width - quick_size.x) / 2f,
         tab.y + (tab.height - quick_size.y) / 2f
     };
-    rl::drawTextEx(self.font, tab.name, quick_pos, 16, 0f, quick_text);
+    rl::drawTextEx(self.font, tab.name, quick_pos, self.scale_font(16), 0f, quick_text);
 }
 
 fn String Manager.truncate_clip_text(&self, String text) {
@@ -968,12 +980,12 @@ fn void Manager.draw_clip_background(&self, float y_pos, bool is_selected, bool 
 
 fn void Manager.draw_favorite_indicator(&self, float y_pos, bool is_favorite) {
     if (!is_favorite) return;
-    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
     rl::drawTextEx(
         self.font, 
         "★".zstr_tcopy(), 
         {(float)CLIP_TEXT_PADDING + FAVORITE_ICON_OFFSET, y_pos + font_y_offset + 3}, 
-        (float)CLIP_FONT_SIZE - 5, 
+        self.scale_font((float)CLIP_FONT_SIZE) - 5, 
         0f, 
         ui::COLOR_GOLD
     );
@@ -981,7 +993,7 @@ fn void Manager.draw_favorite_indicator(&self, float y_pos, bool is_favorite) {
 
 fn void Manager.draw_clip_text(&self, String text, float y_pos, bool is_selected) {
     String display_text = self.truncate_clip_text(text);
-    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
     rl::Color text_color = is_selected ? ui::COLOR_TITLE : ui::COLOR_TEXT;
     rl::drawTextEx(
         self.font, 
@@ -1011,18 +1023,18 @@ fn void Manager.draw_clip_badge(&self, int text_length, float y_pos, bool is_sel
         badge_x + (BADGE_WIDTH - count_size.x) / 2f,
         badge_y + (CLIP_HEIGHT - count_size.y) / 2f,
     };
-    rl::drawTextEx(self.font, count_str, count_pos, 14, 0, ui::COLOR_BADGE_TEXT);
+    rl::drawTextEx(self.font, count_str, count_pos, self.scale_font(14), 0, ui::COLOR_BADGE_TEXT);
 }
 
 fn void Manager.draw_quicklist_number(&self, int quicklist_number, float y_pos) {
     if (quicklist_number == 0) return;
     int rec_width = ui::SCREEN_WIDTH - (CLIP_PADDING * 2);
     float badge_x = (float)CLIP_PADDING + rec_width - BADGE_WIDTH;
-    float font_y_offset = (CLIP_HEIGHT - (float)CLIP_FONT_SIZE) / 2f;
+    float font_y_offset = (CLIP_HEIGHT - self.scale_font((float)CLIP_FONT_SIZE)) / 2f;
     ZString num_str = string::tformat_zstr("%d", quicklist_number);
     rl::Vector2 num_size = rl::measureTextEx(self.font, num_str, 16, 0);
     float num_x = badge_x - num_size.x - QUICKLIST_SPACING;
-    rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, 16, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, num_str, {num_x, y_pos + font_y_offset}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
 }
 
 fn void Manager.draw_note_indicator(&self, String note, float y_pos) {
@@ -1031,7 +1043,7 @@ fn void Manager.draw_note_indicator(&self, String note, float y_pos) {
     float note_x = badge_x + BADGE_WIDTH + 8;  // Right after badge with small spacing
     float note_y = y_pos + 5f;
     ZString n_letter = "n".zstr_tcopy();
-    rl::drawTextEx(self.font, n_letter, {note_x, note_y + -3}, 16, 0f, ui::COLOR_PURPLE);
+    rl::drawTextEx(self.font, n_letter, {note_x, note_y + -3}, self.scale_font(16), 0f, ui::COLOR_PURPLE);
 }
 
 fn void Manager.draw_clip_list(&self) {
@@ -1081,7 +1093,7 @@ fn void Manager.draw_clip_list(&self) {
             ZString timestamp = string::tformat_zstr("%s", entry.timestamp);
             rl::Vector2 timestamp_size = rl::measureTextEx(self.font, timestamp, 16, 0);
             float timestamp_x = (ui::SCREEN_WIDTH - timestamp_size.x) - 25;
-            rl::drawTextEx(self.font, timestamp, {timestamp_x, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
+            rl::drawTextEx(self.font, timestamp, {timestamp_x, ui::SCREEN_HEIGHT - 30f}, self.scale_font(16), 0f, ui::COLOR_FOOTER);
         }
         
         visual_idx++;
@@ -1093,19 +1105,19 @@ fn void Manager.draw_footer(&self) {
     if (self.ui.visual_mode) {
         int count = self.get_visual_selection_count();
         ZString footer = string::tformat_zstr("-- VISUAL --  %d clip%s selected       q: exit visual", count, count == 1 ? "" : "s");
-        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_PURPLE);
+        rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_PURPLE);
     } else {
         StoredEntry? selected = self.get_selected_entry();
         if (try selected && selected.note.len > 0) {
             ZString footer = string::tformat_zstr("h: help       q: quit       note: %s", selected.note);
-            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_FOOTER);
             ZString prefix = "h: help       q: quit       ".zstr_tcopy();
             rl::Vector2 prefix_size = rl::measureTextEx(self.font, prefix, 19, 0);
             ZString note_text = string::tformat_zstr("note: %s", selected.note);
-            rl::drawTextEx(self.font, note_text, {25 + prefix_size.x, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, note_text, {25 + prefix_size.x, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_PURPLE);
         } else {
             ZString footer = string::tformat_zstr("h: help       q: quit");
-            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+            rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_FOOTER);
         }
     }
 }
@@ -1147,7 +1159,7 @@ fn void Manager.render_inspect(&self) {
             badge_x + (badge_w - count_size.x) / 2f,
             (float)y_pos + (badge_h - count_size.y) / 2f,
         };
-        rl::drawTextEx(self.font, count_str, count_pos, 14, 0, ui::COLOR_BADGE_TEXT);
+        rl::drawTextEx(self.font, count_str, count_pos, self.scale_font(14), 0, ui::COLOR_BADGE_TEXT);
 
         // text area
         rl::Rectangle text_area_rec = { 20, 50, ui::SCREEN_WIDTH - 40, ui::SCREEN_HEIGHT - 80 };
@@ -1182,7 +1194,7 @@ fn void Manager.render_inspect(&self) {
             ZString line_num = string::tformat_zstr("%d", i + 1);
             rl::Vector2 num_size = rl::measureTextEx(self.font, line_num, 18f, 1f);
             float num_x = start_x + line_num_width - num_size.x - 10;
-            rl::drawTextEx(self.font, line_num, {num_x, line_y}, 18f, 1f, ui::COLOR_FOOTER);
+            rl::drawTextEx(self.font, line_num, {num_x, line_y}, self.scale_font(18), 1f, ui::COLOR_FOOTER);
             
             // Draw separator
             rl::drawLine((int)(start_x + line_num_width - 5), (int)line_y, 
@@ -1191,20 +1203,20 @@ fn void Manager.render_inspect(&self) {
             
             // Draw line text
             float text_x = start_x + line_num_width + 5;
-            rl::drawTextEx(self.font, lines[i].zstr_tcopy(), {text_x, line_y}, 18f, 1f, ui::COLOR_TEXT);
+            rl::drawTextEx(self.font, lines[i].zstr_tcopy(), {text_x, line_y}, self.scale_font(18), 1f, ui::COLOR_TEXT);
         }
         
         rl::endScissorMode();
 
         // footer with hit count, source app, and full date
         ZString footer_left = string::tformat_zstr("Copied %d times   From: %s", selected.hits, selected.source_app);
-        rl::drawTextEx(self.font, footer_left, {25, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
+        rl::drawTextEx(self.font, footer_left, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(16), 0f, ui::COLOR_FOOTER);
         ZString date_str = string::tformat_zstr("%04d-%02d-%02d %02d:%02d:%02d", 
             selected.timestamp.year, selected.timestamp.month.ordinal, selected.timestamp.day,
             selected.timestamp.hour, selected.timestamp.min, selected.timestamp.sec);
         rl::Vector2 date_size = rl::measureTextEx(self.font, date_str, 16, 0);
         float date_x = (ui::SCREEN_WIDTH - date_size.x) - 25;
-        rl::drawTextEx(self.font, date_str, {date_x, ui::SCREEN_HEIGHT - 30f}, 16, 0f, ui::COLOR_FOOTER);
+        rl::drawTextEx(self.font, date_str, {date_x, ui::SCREEN_HEIGHT - 30f}, self.scale_font(16), 0f, ui::COLOR_FOOTER);
 
     }
     rl::endDrawing();
@@ -1345,12 +1357,12 @@ fn void Manager.render_help(&self) {
     float left_y = y_pos;
     for (int i = 0; i < sections_per_col && i < total_sections; i++) {
         HelpSection section = sections[i];
-        rl::drawTextEx(self.font, section.title, {col1_x, left_y}, 20, 0f, ui::COLOR_GOLD);
+        rl::drawTextEx(self.font, section.title, {col1_x, left_y}, self.scale_font(20), 0f, ui::COLOR_GOLD);
         left_y += line_height;
         
         foreach (item : section.items) {
-            rl::drawTextEx(self.font, item.key, {col1_x + key_offset, left_y}, 18, 0f, ui::COLOR_PURPLE);
-            rl::drawTextEx(self.font, item.description, {col1_x + desc_offset, left_y}, 18, 0f, ui::COLOR_TEXT);
+            rl::drawTextEx(self.font, item.key, {col1_x + key_offset, left_y}, self.scale_font(18), 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, item.description, {col1_x + desc_offset, left_y}, self.scale_font(18), 0f, ui::COLOR_TEXT);
             left_y += line_height;
         }
         
@@ -1361,12 +1373,12 @@ fn void Manager.render_help(&self) {
     float right_y = y_pos;
     for (usz i = sections_per_col; i < total_sections; i++) {
         HelpSection section = sections[i];
-        rl::drawTextEx(self.font, section.title, {col2_x, right_y}, 20, 0f, ui::COLOR_GOLD);
+        rl::drawTextEx(self.font, section.title, {col2_x, right_y}, self.scale_font(20), 0f, ui::COLOR_GOLD);
         right_y += line_height;
         
         foreach (item : section.items) {
-            rl::drawTextEx(self.font, item.key, {col2_x + key_offset, right_y}, 18, 0f, ui::COLOR_PURPLE);
-            rl::drawTextEx(self.font, item.description, {col2_x + desc_offset, right_y}, 18, 0f, ui::COLOR_TEXT);
+            rl::drawTextEx(self.font, item.key, {col2_x + key_offset, right_y}, self.scale_font(18), 0f, ui::COLOR_PURPLE);
+            rl::drawTextEx(self.font, item.description, {col2_x + desc_offset, right_y}, self.scale_font(18), 0f, ui::COLOR_TEXT);
             right_y += line_height;
         }
         
@@ -1377,7 +1389,7 @@ fn void Manager.render_help(&self) {
     
     // Footer
     ZString footer = string::tformat_zstr("h: help       q: quit");
-    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, 19, 0f, ui::COLOR_FOOTER);
+    rl::drawTextEx(self.font, footer, {25, ui::SCREEN_HEIGHT - 30f}, self.scale_font(19), 0f, ui::COLOR_FOOTER);
     
     rl::endDrawing();
 }
@@ -1405,7 +1417,7 @@ fn void Manager.render_note_input(&self) {
     rl::drawRectangleRounded(input_box, 0.3, 8, ui::COLOR_BODY);
     
     String input_text = self.ui.note_input.len() > 0 ? self.ui.note_input.str_view() : "";
-    rl::drawTextEx(self.font, input_text.zstr_tcopy(), {60, 115}, 20, 0f, ui::COLOR_TEXT);
+    rl::drawTextEx(self.font, input_text.zstr_tcopy(), {60, 115}, self.scale_font(20), 0f, ui::COLOR_TEXT);
     
     // Cursor (blinking)
     if (((int)(rl::getTime() * 2)) % 2 == 0) {
@@ -1414,7 +1426,7 @@ fn void Manager.render_note_input(&self) {
     }
     
     ZString instructions = "Enter to save • Esc to cancel".zstr_tcopy();
-    rl::drawTextEx(self.font, instructions, {50, 170}, 16, 0f, ui::COLOR_FOOTER);
+    rl::drawTextEx(self.font, instructions, {50, 170}, self.scale_font(16), 0f, ui::COLOR_FOOTER);
     
     rl::endDrawing();
 }

@@ -69,15 +69,29 @@ fn void move_app_to_foreground() {
 
 fn void center_window() {
     int monitor = rl::getCurrentMonitor();
-    rl::Vector2 size = { (float)rl::getMonitorWidth(monitor), (float)rl::getMonitorHeight(monitor) };
+    int monitor_width = rl::getMonitorWidth(monitor);
+    int monitor_height = rl::getMonitorHeight(monitor);
+    rl::Vector2 monitor_pos = rl::getMonitorPosition(monitor);
+    
+    int x = (int)monitor_pos.x + (monitor_width - ui::SCREEN_WIDTH) / 2;
+    int y = (int)monitor_pos.y + (monitor_height - ui::SCREEN_HEIGHT) / 2;
+    
+    // Clamp to ensure window is on screen
+    if (x < (int)monitor_pos.x) x = (int)monitor_pos.x;
+    if (y < (int)monitor_pos.y) y = (int)monitor_pos.y;
+    
     rl::Vector2 scale = rl::getWindowScaleDPI();
-    int x = (int)((size.x / scale.x - ui::SCREEN_WIDTH) / 2f);
-    int y = (int)((size.y / scale.y - ui::SCREEN_HEIGHT) / 2f);
+    log::info("centering window on monitor %d: pos=(%d,%d) monitor_pos=(%.0f,%.0f) monitor_size=(%dx%d) scale=(%.2fx%.2f)", 
+               monitor, x, y, monitor_pos.x, monitor_pos.y, monitor_width, monitor_height, scale.x, scale.y);
+    
     rl::setWindowPosition(x, y);
 }
 
 fn void UIState.show_window(&self) {
     ui::move_app_to_foreground();
+    rl::clearWindowState(WINDOW_HIDDEN);
+    rl::setWindowState(WINDOW_TOPMOST);
+    rl::restoreWindow();
     center_window();
     self.selected_idx = 0;
     self.mode = LIST;
@@ -87,9 +101,13 @@ fn void UIState.show_window(&self) {
     self.visual_anchor = 0;
     self.g_pending = false;
     self.last_g_press_time = 0;
-    rl::clearWindowState(WINDOW_HIDDEN);
-    rl::setWindowState(WINDOW_TOPMOST);
-    rl::restoreWindow();
+}
+
+fn float get_system_font_size() {
+    ObjcClass ns_font_class = objc::getClass("NSFont");
+    double system_font_size = objc::msg_send(ns_font_class, GetDouble, "systemFontSize");
+    log::info("macOS system font size: %.1f pt", system_font_size);
+    return (float)system_font_size;
 }
 
 fn Font load_font() {
@@ -105,7 +123,6 @@ fn Font load_font() {
     for (int i = 0; i < 95; i++) {
         codepoints[i] = 32 + i; // ASCII 32-126
     }
-    // extra codepoints
     codepoints[95] = 0x2605; // ★ (U+2605)
     codepoints[96] = 0x2606; // ☆ (U+2606)
     codepoints[97] = 0x2191; // ↑ (U+2191)

@@ -15,17 +15,19 @@ const int ASSOCIATION_COPY_NONATOMIC = 3;
 const int ASSOCIATION_RETAIN = 01401;
 const int ASSOCIATION_COPY = 01403;
 
-alias GetInt        = fn int   (ObjcId, ObjcSelector);
+alias GetBool_Id    = fn bool  (ObjcId, ObjcSelector, ObjcId);
+alias GetBool_IdId  = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
+alias GetDouble     = fn double(void*, objc::ObjcSelector);
 alias GetId         = fn ObjcId(ObjcId, ObjcSelector);
 alias GetId_Id      = fn ObjcId(ObjcId, ObjcSelector, ObjcId);
-alias SendId        = fn void  (ObjcId, ObjcSelector, ObjcId);
-alias GetId_str     = fn ObjcId(ObjcId, ObjcSelector, ZString);
-alias GetBool_Id    = fn bool  (ObjcId, ObjcSelector, ObjcId);
-alias GetId_double  = fn ObjcId(ObjcId, ObjcSelector, double);
-alias SendBool      = fn void  (ObjcId, ObjcSelector, bool);
-alias GetBool_IdId  = fn bool  (ObjcId, ObjcSelector, ObjcId, ObjcId);
-alias SendUsz       = fn void  (ObjcId, ObjcSelector, usz);
 alias GetId_IdSelId = fn ObjcId(ObjcId, ObjcSelector, ObjcId, ObjcSelector, ObjcId);
+alias GetId_double  = fn ObjcId(ObjcId, ObjcSelector, double);
+alias GetId_str     = fn ObjcId(ObjcId, ObjcSelector, ZString);
+alias GetInt        = fn int   (ObjcId, ObjcSelector);
+alias SendBool      = fn void  (ObjcId, ObjcSelector, bool);
+alias SendId        = fn void  (ObjcId, ObjcSelector, ObjcId);
+alias SendUsz       = fn void  (ObjcId, ObjcSelector, usz);
+
 
 fn ObjcId nsstr(ZString str) {
     ObjcClass str_cls = objc::getClass("NSString");
