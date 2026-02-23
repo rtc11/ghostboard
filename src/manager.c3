@@ -17,7 +17,7 @@ faultdef REDACTED;
 // Layout constants
 const int MAX_VISIBLE_ITEMS = 16;
 const int ITEM_SPACING = 30;
-const int HEADER_HEIGHT = 50;
+const int HEADER_HEIGHT = 68;
 const int FOOTER_HEIGHT = 40;
 const int TAB_HEIGHT = 30;
 
@@ -869,27 +869,7 @@ fn void Manager.render_clips(&self) {
 }
 
 fn void Manager.draw_header(&self) {
-    ZString header_txt = "GhostBoard".zstr_tcopy();
-    float header_font_size = 24f;
-    rl::Vector2 header_size = rl::measureTextEx(self.font, header_txt, header_font_size, 0f);
-    float header_x = (ui::SCREEN_WIDTH - header_size.x) / 2f;
-    int header_padding = 10;
-    int extra_body_space = 80;
-    rl::Rectangle header_rec = { 
-        header_x - header_padding - extra_body_space / 2f, 
-        10 - header_padding / 2f, 
-        header_size.x + header_padding * 2f + extra_body_space, 
-        header_size.y + header_padding 
-    };
-    rl::drawRectangleRounded(header_rec, 0.5, 12, ui::COLOR_BODY);
-    rl::drawTextEx(self.font, header_txt, {header_x, 10f}, header_font_size, 0f, ui::COLOR_TITLE);
 
-    ZString version_txt = "v0.1.0".zstr_tcopy();
-    float version_font_size = 14f;
-    rl::Vector2 version_size = rl::measureTextEx(self.font, version_txt, version_font_size, 0f);
-    float version_x = header_x + header_size.x + 8f;
-    float version_y = 10f + (header_size.y - version_size.y) / 2f;
-    rl::drawTextEx(self.font, version_txt, {version_x, version_y}, version_font_size, 0f, ui::COLOR_FOOTER);
 }
 
 fn void Manager.draw_search_bar(&self) {
@@ -914,7 +894,7 @@ struct Tab {
 
 fn void Manager.draw_tabs(&self) {
     Tab tab = {
-        .y = 43,
+        .y = 10,
         .height = 25,
         .width = 100,
         .spacing = 10,
@@ -1084,7 +1064,7 @@ fn void Manager.draw_file_indicator(&self, float y_pos) {
 
 fn void Manager.draw_clip_list(&self) {
     float search_bar_height = self.ui.mode == SEARCH ? 30 : 0;
-    float content_start = HEADER_HEIGHT + TAB_HEIGHT + search_bar_height;
+    float content_start = HEADER_HEIGHT + search_bar_height;
     
     int visual_idx = 0;
     int drawn_count = 0;
