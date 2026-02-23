@@ -8,5 +8,7 @@ struct Config
     String log_file;
     int history_limit;
     String font_path;
+    int expire_unused_days;
+    int expire_used_days;
 }
 

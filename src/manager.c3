@@ -60,6 +60,7 @@ fn Manager init(Config config) {
         .font_scale = font_scale,
     };
     storage::load_from_file(&manager.config, &manager.history);
+    storage::cleanup_expired_clips(&manager.config, &manager.history);
     manager.update();
     rl::setExitKey(rl::KEY_NULL); // disable default ESCAPE to exit
     return manager;
@@ -201,7 +202,6 @@ fn void Manager.handle_window_focus(&self) {
 fn void Manager.check_clipboard_changes(&self, int* last_count) {
     int current = self.get_clipboard_count();
     if (current != *last_count) {
-        log::info("new clip detected");
         *last_count = current;
         thread::sleep(time::ms(50)); // race condition workaround
         self.update();

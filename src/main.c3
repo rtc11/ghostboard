@@ -7,20 +7,20 @@ import config, clipboard, manager, ui;
 import raylib5;
 
 // macOS hardware keycodes (different from ASCII/raylib character codes)
-const ushort KEYCODE_D = 0x02;
-const ushort KEYCODE_U = 0x20;
-const ushort KEYCODE_V = 0x09;
-const ushort KEYCODE_EQUAL = 0x1B;      // Equal/Plus key
-const ushort KEYCODE_SLASH = 0x2C;      // Slash key (used for Command+-)
-const ushort KEYCODE_1 = 0x12;
-const ushort KEYCODE_2 = 0x13;
-const ushort KEYCODE_3 = 0x14;
-const ushort KEYCODE_4 = 0x15;
-const ushort KEYCODE_5 = 0x17;
-const ushort KEYCODE_6 = 0x16;
-const ushort KEYCODE_7 = 0x1A;
-const ushort KEYCODE_8 = 0x1C;
-const ushort KEYCODE_9 = 0x19;
+const ushort KEYCODE_D     = 0x02;
+const ushort KEYCODE_U     = 0x20;
+const ushort KEYCODE_V     = 0x09;
+const ushort KEYCODE_EQUAL = 0x1B;
+const ushort KEYCODE_SLASH = 0x2C;
+const ushort KEYCODE_1     = 0x12;
+const ushort KEYCODE_2     = 0x13;
+const ushort KEYCODE_3     = 0x14;
+const ushort KEYCODE_4     = 0x15;
+const ushort KEYCODE_5     = 0x17;
+const ushort KEYCODE_6     = 0x16;
+const ushort KEYCODE_7     = 0x1A;
+const ushort KEYCODE_8     = 0x1C;
+const ushort KEYCODE_9     = 0x19;
 
 fn void main(String[] args)
 {
@@ -29,7 +29,9 @@ fn void main(String[] args)
         .storage_file = "storage.bin",
         .log_file = "logs.txt",
         .history_limit = 500,
-        .font_path = "/System/Library/Fonts/SFNS.ttf",  // macOS system font
+        .font_path = "/System/Library/Fonts/SFNS.ttf",
+        .expire_unused_days = 7,
+        .expire_used_days = 30,
     };
 
     logger::setup_logging(&config);

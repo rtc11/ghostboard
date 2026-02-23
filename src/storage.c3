@@ -127,7 +127,7 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
     defer (void)file.close();
     
     foreach (entry: history) {
-        log::info("Saving entry: is_file=%s, file_paths.len=%d", entry.is_file, entry.file_paths.len());
+        log::debug("Saving entry: is_file=%s, file_paths.len=%d", entry.is_file, entry.file_paths.len());
         Time timestamp = entry.timestamp.time;
         io::write_any(&file, &timestamp)!!;
         int gmt_offset = entry.timestamp.gmt_offset;
@@ -167,6 +167,29 @@ fn void save_to_file(Config* config, List{StoredEntry}* history) {
             }
         }
     }
-    log::info("saved %d clips to storage", history.len());
+    log::debug("saved %d clips to storage", history.len());
+}
+
+fn void cleanup_expired_clips(Config* config, List{StoredEntry}* history) {
+    DateTime now = datetime::now();
+    int removed_count = 0;
+    
+    for (int i = (int)((usz)history.len() - 1); i >= 0; i--) {
+        StoredEntry* entry = history.get_ref(i);
+        if (entry.is_favorite) continue;
+        double age_seconds = now.diff_sec(entry.timestamp);
+        int age_days = (int)(age_seconds / 86400);
+        int expire_days = entry.hits <= 1 ? config.expire_unused_days : config.expire_used_days;
+        
+        if (age_days > expire_days) {
+            log::info("Removing expired clip (age: %d days, hits: %d): %.50s...", age_days, entry.hits, entry.text);
+            history.remove_at(i);
+            removed_count++;
+        }
+    }
+    
+    if (removed_count > 0) {
+        log::info("Cleanup complete: removed %d expired clips", removed_count);
+    }
 }
 
