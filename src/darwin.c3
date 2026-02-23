@@ -79,6 +79,7 @@ extern fn void* eventTapCreate(int tap, int place, int options, ulong mask, Even
 extern fn void* eventTapCreateForPSN(void* psn, int place, int options, ulong mask, void* callback, void* userInfo) @cname("CGEventTapCreateForPSN");
 extern fn bool eventSourceKeyState(int state, ushort key) @cname("CGEventSourceKeyState");
 extern fn void eventTapEnable(void* tap, bool enable) @cname("CGEventTapEnable");
+extern fn bool eventTapIsEnabled(void* tap) @cname("CGEventTapIsEnabled");
 extern fn ulong eventGetFlags(void* event) @cname("CGEventGetFlags");
 extern fn long eventGetIntegerValueField(void* event, int field) @cname("CGEventGetIntegerValueField");
 extern fn void* colorSpaceCreateDeviceRGB() @cname("CGColorSpaceCreateDeviceRGB");

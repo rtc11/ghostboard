@@ -90,20 +90,39 @@ fn void setup_tray(Manager* manager) {
     objc::msg_send(status_item, SendId, "setMenu:", menu);
 }
 
+void* event_tap;
+
 fn void setup_event_tap(Manager* manager) {
     log::info("Setting up event tap for global hotkey (Ctrl+Shift+V)...");
-    void* tap = cg::eventTapCreate(tap: 0, place: 0, options: 0, mask: (1<<10), callback: &on_key_event, user_info: manager);
-    if (tap == null) {
+    event_tap = cg::eventTapCreate(tap: 0, place: 0, options: 0, mask: (1<<10), callback: &on_key_event, user_info: manager);
+    if (event_tap == null) {
         log::error("Failed to create event tap - Accessibility Permissions required!");
         log::error("Go to System Settings > Privacy & Security > Accessibility");
         log::error("Remove GhostBoard.app, add it back, enable it, then restart.");
         log::error("If already added, try removing and re-adding after code changes.");
         return;
     }
-    void* run_loop_source = cf::machPortCreateRunLoopSource(null, tap, 0);
+    void* run_loop_source = cf::machPortCreateRunLoopSource(null, event_tap, 0);
     cf::runLoopAddSource(cf::runLoopGetCurrent(), run_loop_source, cf::RUN_LOOP_COMMON_MODES);
-    cg::eventTapEnable(tap, true);
+    cg::eventTapEnable(event_tap, true);
     log::info("Global event tap active! Press Ctrl+Shift+V to open menu.");
+}
+
+// On macOS the event tap can become disabled by the system. This will re-enable. 
+fn void check_event_tap() {
+    if (event_tap == null) return;
+    
+    bool is_enabled = cg::eventTapIsEnabled(event_tap);
+    if (!is_enabled) {
+        log::warn("Event tap was disabled by system! Re-enabling...");
+        cg::eventTapEnable(event_tap, true);
+        bool now_enabled = cg::eventTapIsEnabled(event_tap);
+        if (now_enabled) {
+            log::info("Event tap successfully re-enabled");
+        } else {
+            log::error("Failed to re-enable event tap");
+        }
+    }
 }
 
 fn void* on_key_event(void* proxy, int type, void* event, void* refcon) {

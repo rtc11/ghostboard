@@ -1,4 +1,5 @@
 module manager;
+import main;
 
 import config, clipboard, ui, storage;
 import raylib5;
@@ -151,11 +152,19 @@ fn int Manager.get_visual_selection_count(&self) {
 
 fn void Manager.run(&self) {
     int last_clipboard_count = self.get_clipboard_count();
+    time::Time last_tap_check = time::now();
     
     while (!rl::windowShouldClose() && self.ui.mode != QUIT) {
         self.process_events(&last_clipboard_count);
         self.update_state();
         self.render();
+        
+        time::Time now = time::now();
+        if (now.diff_us(last_tap_check).to_ms() > 5_000) {
+            main::check_event_tap();
+            last_tap_check = now;
+        }
+        
         thread::sleep(time::ms(8)); // ~120fps
     }
     self.shutdown();
